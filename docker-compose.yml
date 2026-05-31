@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8026:8000"
+    volumes:
+      - /root/aplikacje/networth:/app/data
+    environment:
+      DB_PATH: /app/data/networth.db
+    restart: unless-stopped
