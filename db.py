@@ -4,6 +4,11 @@ from contextlib import contextmanager
 from datetime import datetime
 
 DB_PATH = os.environ.get("DB_PATH", "data/networth.db")
+BACKUP_DIR = os.environ.get(
+    "BACKUP_DIR",
+    os.path.join(os.path.dirname(DB_PATH) or ".", "backups"),
+)
+BACKUP_KEEP = int(os.environ.get("BACKUP_KEEP", "30"))
 
 
 def _ensure_dir():
@@ -331,7 +336,74 @@ def get_stats_compare(from_date, to_date) -> dict:
     }
 
 
-# ── Backup ────────────────────────────────────────────────────────────────────
+# ── File backups ─────────────────────────────────────────────────────────────
+
+def list_backups() -> list:
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    files = []
+    for fname in os.listdir(BACKUP_DIR):
+        if fname.endswith(".db"):
+            fpath = os.path.join(BACKUP_DIR, fname)
+            stat = os.stat(fpath)
+            files.append({
+                "filename": fname,
+                "size": stat.st_size,
+                "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            })
+    return sorted(files, key=lambda x: x["created_at"], reverse=True)
+
+
+def create_backup() -> dict:
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dst = os.path.join(BACKUP_DIR, f"networth_{timestamp}.db")
+    src_conn = sqlite3.connect(DB_PATH)
+    dst_conn = sqlite3.connect(dst)
+    try:
+        with dst_conn:
+            src_conn.backup(dst_conn)
+    finally:
+        src_conn.close()
+        dst_conn.close()
+    # Prune old backups
+    backups = list_backups()
+    while len(backups) > BACKUP_KEEP:
+        oldest = backups.pop()
+        try:
+            os.remove(os.path.join(BACKUP_DIR, oldest["filename"]))
+        except OSError:
+            pass
+    return {"filename": os.path.basename(dst)}
+
+
+def restore_backup(filename: str) -> dict:
+    if "/" in filename or ".." in filename:
+        raise ValueError("Nieprawidłowa nazwa pliku")
+    src = os.path.join(BACKUP_DIR, filename)
+    if not os.path.exists(src):
+        raise LookupError("Backup nie istnieje")
+    src_conn = sqlite3.connect(src)
+    dst_conn = sqlite3.connect(DB_PATH)
+    try:
+        with dst_conn:
+            src_conn.backup(dst_conn)
+    finally:
+        src_conn.close()
+        dst_conn.close()
+    return {"ok": True}
+
+
+def delete_backup(filename: str) -> dict:
+    if "/" in filename or ".." in filename:
+        raise ValueError("Nieprawidłowa nazwa pliku")
+    fpath = os.path.join(BACKUP_DIR, filename)
+    if not os.path.exists(fpath):
+        raise LookupError("Backup nie istnieje")
+    os.remove(fpath)
+    return {"ok": True}
+
+
+# ── JSON export / import ──────────────────────────────────────────────────────
 
 def export_data() -> dict:
     with get_db() as conn:

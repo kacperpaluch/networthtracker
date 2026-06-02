@@ -13,7 +13,8 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 - **Struktura majątku**: procent każdego konta w aktywach, wskaźnik D/A (dług do aktywów)
 - **Historia snapshotów**: tabela ze zwijalnymi detalami
 - **Zarządzanie kontami**: dodawanie, edycja, archiwizacja, usuwanie
-- **Eksport / Import** danych w formacie JSON (pełny backup)
+- **Backup**: automatyczny codziennie o 4:00 (pliki `.db`), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku
+- **Eksport / Import** danych w formacie JSON
 - Responsywny ciemny motyw (dark mode)
 
 ---
@@ -27,6 +28,8 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 | FastAPI | 0.115.0 | Framework HTTP / REST API |
 | Uvicorn | 0.30.0 | Serwer ASGI |
 | SQLite | (stdlib) | Baza danych |
+| APScheduler | 3.10.4 | Automatyczny backup codziennie o 4:00 |
+| python-multipart | 0.0.9 | Przesyłanie pliku .db do przywrócenia |
 | Pydantic | (via FastAPI) | Walidacja danych wejściowych |
 
 ### Frontend
@@ -150,7 +153,18 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 | GET | `/api/stats/summary` | Podsumowanie: bieżące wartości, YTD, CAGR, śr. miesięczna |
 | GET | `/api/stats/compare?from=YYYY-MM-DD&to=YYYY-MM-DD` | Porównanie dwóch dat |
 
-### Backup
+### Backup — pliki .db
+
+| Metoda | Endpoint | Opis |
+|---|---|---|
+| GET | `/api/backup/list` | Lista zapisanych backupów |
+| POST | `/api/backup/create` | Utwórz backup ręcznie |
+| GET | `/api/backup/download/{filename}` | Pobierz plik .db na dysk |
+| POST | `/api/backup/restore/{filename}` | Przywróć z backupu serwerowego |
+| POST | `/api/backup/restore-upload` | Przywróć z pliku .db (FormData: `file`) |
+| DELETE | `/api/backup/{filename}` | Usuń backup |
+
+### JSON export / import
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -232,6 +246,8 @@ Zmienne środowiskowe (ustawiane w `docker-compose.yml`):
 | Zmienna | Domyślna | Opis |
 |---|---|---|
 | `DB_PATH` | `data/networth.db` | Ścieżka do pliku bazy SQLite |
+| `BACKUP_DIR` | `<katalog DB>/backups` | Katalog na pliki backup |
+| `BACKUP_KEEP` | `30` | Liczba zachowywanych automatycznych backupów |
 
 ---
 

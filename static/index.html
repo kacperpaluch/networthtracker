@@ -297,6 +297,7 @@ select option{background:var(--bg-card)}
     <button class="nav-tab active" onclick="switchTab('dashboard')">Dashboard</button>
     <button class="nav-tab" onclick="switchTab('history')">Historia</button>
     <button class="nav-tab" onclick="switchTab('accounts')">Konta</button>
+    <button class="nav-tab" onclick="switchTab('backup')">Backup</button>
   </div>
   <div class="nav-actions">
     <button class="btn btn-ghost btn-sm" onclick="exportData()" title="Eksportuj dane">
@@ -453,6 +454,50 @@ select option{background:var(--bg-card)}
   </div>
 </div>
 
+<!-- ── Backup tab ── -->
+<div id="tab-backup" class="tab-panel">
+  <div class="page-header">
+    <h2>Backup bazy danych</h2>
+    <div class="page-header-actions">
+      <button class="btn btn-primary" onclick="createBackup()">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.97a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.779a.749.749 0 1 1 1.06-1.06l1.97 1.97Z"/></svg>
+        Utwórz backup
+      </button>
+      <label class="btn btn-secondary" style="cursor:pointer" title="Przywróć z pliku .db pobranego na dysk">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 2.311v5.689l-1.97-1.97a.749.749 0 1 0-1.06 1.06l3.25 3.25a.749.749 0 0 0 1.06 0l3.25-3.25a.749.749 0 1 0-1.06-1.06L8.75 8V2.311a.75.75 0 0 0-1.5 0Z"/></svg>
+        Wczytaj plik .db
+        <input type="file" accept=".db" style="display:none" onchange="restoreFromUpload(event)">
+      </label>
+    </div>
+  </div>
+
+  <div id="backup-msg" style="display:none; padding:10px 16px; border-radius:var(--radius-sm); font-size:.875rem; margin-bottom:4px;"></div>
+
+  <div class="card" style="padding:0">
+    <div class="table-wrap">
+      <table id="backup-table">
+        <thead>
+          <tr>
+            <th>Plik</th>
+            <th>Rozmiar</th>
+            <th>Data</th>
+            <th style="text-align:right">Akcje</th>
+          </tr>
+        </thead>
+        <tbody id="backup-tbody"></tbody>
+      </table>
+    </div>
+    <div id="backup-empty" style="display:none; padding:40px 24px; text-align:center; color:var(--text-muted); font-size:.875rem;">
+      Brak backupów. Kliknij „Utwórz backup" aby zapisać pierwszy.
+    </div>
+  </div>
+
+  <p class="text-sm text-muted" style="margin-top:10px;">
+    Automatyczny backup wykonywany codziennie o&nbsp;4:00. Przechowywane są ostatnie 30&nbsp;kopii.
+    Można też przywrócić dane wczytując plik .db&nbsp;pobrany wcześniej na&nbsp;dysk.
+  </p>
+</div>
+
 </main>
 
 <!-- ── Modal: Snapshot ── -->
@@ -590,10 +635,11 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById(`tab-${tab}`).classList.add('active');
-  document.querySelectorAll('.nav-tab')[['dashboard','history','accounts'].indexOf(tab)].classList.add('active');
+  document.querySelectorAll('.nav-tab')[['dashboard','history','accounts','backup'].indexOf(tab)].classList.add('active');
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'history')   renderHistory();
   if (tab === 'accounts')  renderAccounts();
+  if (tab === 'backup')    loadBackups();
 }
 
 // ── Dashboard rendering ────────────────────────────────────────────────────
@@ -1228,6 +1274,114 @@ async function deleteAccount(id) {
     await refresh();
     renderAccounts();
   } catch(e) { alert('Błąd: ' + e.message); }
+}
+
+// ── Backup ────────────────────────────────────────────────────────────────
+function showBackupMsg(text, ok) {
+  const el = document.getElementById('backup-msg');
+  el.textContent = text;
+  el.style.display = '';
+  el.style.background  = ok ? 'var(--green-bg)'  : 'var(--red-bg)';
+  el.style.color       = ok ? 'var(--green)'     : 'var(--red)';
+  el.style.border      = ok ? '1px solid rgba(16,185,129,.3)' : '1px solid rgba(248,81,73,.3)';
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+async function loadBackups() {
+  try {
+    const backups = await GET('/api/backup/list');
+    renderBackups(backups);
+  } catch(e) {
+    document.getElementById('backup-tbody').innerHTML = '';
+    document.getElementById('backup-empty').style.display = '';
+    document.getElementById('backup-empty').textContent = 'Błąd ładowania listy backupów.';
+  }
+}
+
+function renderBackups(backups) {
+  const tbody = document.getElementById('backup-tbody');
+  const empty = document.getElementById('backup-empty');
+  if (!backups || !backups.length) {
+    tbody.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  tbody.innerHTML = backups.map(b => `
+    <tr>
+      <td class="td-mono">${esc(b.filename)}</td>
+      <td class="td-mono">${(b.size / 1024).toFixed(1)} KB</td>
+      <td class="td-date">${b.created_at.replace('T', ' ').slice(0, 19)}</td>
+      <td class="td-actions">
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="downloadBackup('${esc(b.filename)}')" title="Pobierz">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.97a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.779a.749.749 0 1 1 1.06-1.06l1.97 1.97Z"/></svg>
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="restoreFromServer('${esc(b.filename)}')" title="Przywróć">Przywróć</button>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteBackup('${esc(b.filename)}')" title="Usuń">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.75 1.75 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z"/></svg>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function createBackup() {
+  try {
+    await POST('/api/backup/create', {});
+    showBackupMsg('Backup utworzony pomyślnie!', true);
+    await loadBackups();
+  } catch(e) { showBackupMsg('Błąd tworzenia backupu: ' + e.message, false); }
+}
+
+function downloadBackup(filename) {
+  const a = document.createElement('a');
+  a.href = '/api/backup/download/' + encodeURIComponent(filename);
+  a.download = filename;
+  a.click();
+}
+
+async function restoreFromServer(filename) {
+  if (!confirm(`Przywrócić backup „${filename}"?\nBieżące dane zostaną nadpisane.`)) return;
+  try {
+    await POST(`/api/backup/restore/${encodeURIComponent(filename)}`, {});
+    showBackupMsg('Backup przywrócony pomyślnie!', true);
+    await refresh();
+    renderDashboard();
+  } catch(e) { showBackupMsg('Błąd przywracania: ' + e.message, false); }
+}
+
+async function restoreFromUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!confirm(`Wczytać plik „${file.name}" i nadpisać bieżące dane?`)) {
+    event.target.value = '';
+    return;
+  }
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const r = await fetch('/api/backup/restore-upload', { method: 'POST', body: formData });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(err.detail || r.statusText);
+    }
+    showBackupMsg('Plik przywrócony pomyślnie!', true);
+    await refresh();
+    renderDashboard();
+  } catch(e) { showBackupMsg('Błąd wczytywania pliku: ' + e.message, false); }
+  event.target.value = '';
+}
+
+async function deleteBackup(filename) {
+  if (!confirm(`Usunąć backup „${filename}"?`)) return;
+  try {
+    const r = await fetch(`/api/backup/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(err.detail || r.statusText);
+    }
+    await loadBackups();
+  } catch(e) { showBackupMsg('Błąd usuwania: ' + e.message, false); }
 }
 
 // ── Export / Import ────────────────────────────────────────────────────────

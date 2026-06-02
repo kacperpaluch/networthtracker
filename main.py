@@ -1,19 +1,44 @@
+import logging
+import os
+import sqlite3
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile, File
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import db
 
+logger = logging.getLogger(__name__)
+
+
+async def _auto_backup():
+    try:
+        db.create_backup()
+        logger.info("Auto-backup zakończony pomyślnie")
+    except Exception as e:
+        logger.error("Błąd auto-backupu: %s", e)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        _auto_backup,
+        CronTrigger(hour=4, minute=0),
+        id="daily_backup",
+        replace_existing=True,
+    )
+    scheduler.start()
     yield
+    scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="Net Worth Tracker", lifespan=lifespan)
@@ -144,7 +169,74 @@ def stats_compare(
     return db.get_stats_compare(from_date, to_date)
 
 
-# ── Backup ────────────────────────────────────────────────────────────────────
+# ── Backup — pliki .db ────────────────────────────────────────────────────────
+
+@app.get("/api/backup/list")
+def list_backups():
+    return db.list_backups()
+
+
+@app.post("/api/backup/create", status_code=201)
+def create_backup():
+    try:
+        return db.create_backup()
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/backup/download/{filename}")
+def download_backup(filename: str):
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, "Nieprawidłowa nazwa pliku")
+    fpath = os.path.join(db.BACKUP_DIR, filename)
+    if not os.path.exists(fpath):
+        raise HTTPException(404, "Backup nie istnieje")
+    return FileResponse(fpath, filename=filename, media_type="application/octet-stream")
+
+
+@app.post("/api/backup/restore/{filename}")
+def restore_backup(filename: str):
+    try:
+        return db.restore_backup(filename)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/backup/restore-upload")
+async def restore_from_upload(file: UploadFile = File(...)):
+    if not file.filename.endswith(".db"):
+        raise HTTPException(400, "Akceptowane są tylko pliki .db")
+    content = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+    try:
+        src_conn = sqlite3.connect(tmp_path)
+        dst_conn = sqlite3.connect(db.DB_PATH)
+        try:
+            with dst_conn:
+                src_conn.backup(dst_conn)
+        finally:
+            src_conn.close()
+            dst_conn.close()
+    finally:
+        os.unlink(tmp_path)
+    return {"ok": True}
+
+
+@app.delete("/api/backup/{filename}")
+def delete_backup(filename: str):
+    try:
+        return db.delete_backup(filename)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ── JSON export / import ──────────────────────────────────────────────────────
 
 @app.get("/api/export")
 def export():
