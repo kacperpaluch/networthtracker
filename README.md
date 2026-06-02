@@ -166,7 +166,7 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 Obraz dostępny na Docker Hub: **[kpa90/networthtracker](https://hub.docker.com/r/kpa90/networthtracker)**  
 Platforma: `linux/arm64` (Raspberry Pi, Orange Pi itp.)
 
-Skopiuj poniższy `docker-compose.yml` i uruchom:
+Skopiuj poniższy `docker-compose.yml`, dostosuj port i ścieżkę danych, a następnie uruchom:
 
 ```yaml
 services:
@@ -174,9 +174,9 @@ services:
     image: kpa90/networthtracker:latest
     container_name: networthtracker
     ports:
-      - "${PORT:-8026}:8000"
+      - "8026:8000"
     volumes:
-      - ${DATA_PATH:-/opt/networthtracker/data}:/app/data
+      - /opt/networthtracker/data:/app/data
     environment:
       DB_PATH: /app/data/networth.db
     restart: unless-stopped
@@ -186,12 +186,9 @@ services:
 docker compose up -d
 ```
 
-Zmienne środowiskowe (opcjonalne — można ustawić bezpośrednio w Portainerze):
-
-| Zmienna | Domyślna | Opis |
-|---|---|---|
-| `PORT` | `8026` | Port na hoście |
-| `DATA_PATH` | `/opt/networthtracker/data` | Katalog na dane SQLite |
+Zmień w pliku:
+- `8026` — port na hoście
+- `/opt/networthtracker/data` — katalog na dane SQLite (musi istnieć lub zostanie utworzony przez Dockera)
 
 ### Z lokalnego kodu (deweloperskie / samodzielny build)
 
