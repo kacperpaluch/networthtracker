@@ -1,10 +1,11 @@
 services:
-  app:
-    build: .
+  networthtracker:
+    image: kpa90/networthtracker:latest
+    container_name: networthtracker
     ports:
-      - "8026:8000"
+      - "${PORT:-8026}:8000"
     volumes:
-      - /root/aplikacje/networth:/app/data
+      - ${DATA_PATH:-/opt/networthtracker/data}:/app/data
     environment:
       DB_PATH: /app/data/networth.db
     restart: unless-stopped

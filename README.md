@@ -161,7 +161,39 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 
 ## Uruchomienie
 
-### Z Dockerem (produkcja / Raspberry Pi)
+### Z Docker Hub (zalecane — Portainer / serwer)
+
+Obraz dostępny na Docker Hub: **[kpa90/networthtracker](https://hub.docker.com/r/kpa90/networthtracker)**  
+Platforma: `linux/arm64` (Raspberry Pi, Orange Pi itp.)
+
+Skopiuj poniższy `docker-compose.yml` i uruchom:
+
+```yaml
+services:
+  networthtracker:
+    image: kpa90/networthtracker:latest
+    container_name: networthtracker
+    ports:
+      - "${PORT:-8026}:8000"
+    volumes:
+      - ${DATA_PATH:-/opt/networthtracker/data}:/app/data
+    environment:
+      DB_PATH: /app/data/networth.db
+    restart: unless-stopped
+```
+
+```bash
+docker compose up -d
+```
+
+Zmienne środowiskowe (opcjonalne — można ustawić bezpośrednio w Portainerze):
+
+| Zmienna | Domyślna | Opis |
+|---|---|---|
+| `PORT` | `8026` | Port na hoście |
+| `DATA_PATH` | `/opt/networthtracker/data` | Katalog na dane SQLite |
+
+### Z lokalnego kodu (deweloperskie / samodzielny build)
 
 ```bash
 # Zbuduj i uruchom
@@ -176,7 +208,7 @@ docker compose logs -f
 
 Aplikacja dostępna pod: `http://<host>:8026`
 
-**Dane trwałe:** baza SQLite jest montowana jako wolumin w `/root/aplikacje/networth/networth.db` na hoście — dane przeżywają rebuild kontenera.
+**Dane trwałe:** baza SQLite jest montowana jako wolumin — dane przeżywają rebuild kontenera.
 
 ### Lokalnie (deweloperskie)
 
