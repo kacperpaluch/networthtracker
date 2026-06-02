@@ -13,7 +13,7 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 - **Struktura majątku**: procent każdego konta w aktywach, wskaźnik D/A (dług do aktywów)
 - **Historia snapshotów**: tabela ze zwijalnymi detalami
 - **Zarządzanie kontami**: dodawanie, edycja, archiwizacja, usuwanie
-- **Backup**: automatyczny codziennie o 4:00 (pliki `.db`), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku
+- **Backup**: automatyczny wg konfigurowalnego harmonogramu cron (domyślnie 4:00), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku; harmonogram ustawiany z poziomu zakładki Backup (działa bez restartu)
 - **Eksport / Import** danych w formacie JSON
 - Responsywny ciemny motyw (dark mode)
 
@@ -106,6 +106,10 @@ entries
   account_id  INTEGER → accounts(id)  ON DELETE RESTRICT
   value       REAL NOT NULL
   UNIQUE(snapshot_id, account_id)
+
+settings
+  id          INTEGER PK CHECK(id = 1)  -- singleton
+  backup_cron TEXT DEFAULT '0 4 * * *'  -- wyrażenie cron harmonogramu backupu
 ```
 
 **Ważne reguły:**
@@ -153,6 +157,13 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 | GET | `/api/stats/summary` | Podsumowanie: bieżące wartości, YTD, CAGR, śr. miesięczna |
 | GET | `/api/stats/compare?from=YYYY-MM-DD&to=YYYY-MM-DD` | Porównanie dwóch dat |
 
+### Ustawienia (`/api/settings`)
+
+| Metoda | Endpoint | Opis |
+|---|---|---|
+| GET | `/api/settings` | Pobierz ustawienia (m.in. `backup_cron`) |
+| PATCH | `/api/settings` | Zapisz ustawienia `{backup_cron}` i przeplanuj scheduler |
+
 ### Backup — pliki .db
 
 | Metoda | Endpoint | Opis |
@@ -178,7 +189,7 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 ### Z Docker Hub (zalecane — Portainer / serwer)
 
 Obraz dostępny na Docker Hub: **[kpa90/networthtracker](https://hub.docker.com/r/kpa90/networthtracker)**  
-Platforma: `linux/arm64` (Raspberry Pi, Orange Pi itp.)
+Platforma: `linux/amd64` + `linux/arm64` (Raspberry Pi, Orange Pi itp.)
 
 Skopiuj poniższy `docker-compose.yml`, dostosuj port i ścieżkę danych, a następnie uruchom:
 
