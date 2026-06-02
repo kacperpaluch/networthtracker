@@ -55,6 +55,11 @@ def init_db():
                 value       REAL    NOT NULL,
                 UNIQUE(snapshot_id, account_id)
             );
+            CREATE TABLE IF NOT EXISTS settings (
+                id          INTEGER PRIMARY KEY CHECK(id = 1),
+                backup_cron TEXT NOT NULL DEFAULT '0 4 * * *'
+            );
+            INSERT OR IGNORE INTO settings (id, backup_cron) VALUES (1, '0 4 * * *');
         """)
 
 
@@ -334,6 +339,23 @@ def get_stats_compare(from_date, to_date) -> dict:
         "worst_account":   changes[-1] if len(changes) > 1 else None,
         "account_changes": changes,
     }
+
+
+# ── Settings ─────────────────────────────────────────────────────────────────
+
+def get_settings() -> dict:
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
+        return dict(row) if row else {"id": 1, "backup_cron": "0 4 * * *"}
+
+
+def save_settings(backup_cron: str) -> dict:
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE settings SET backup_cron = ? WHERE id = 1",
+            (backup_cron,),
+        )
+    return get_settings()
 
 
 # ── File backups ─────────────────────────────────────────────────────────────

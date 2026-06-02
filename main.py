@@ -26,17 +26,26 @@ async def _auto_backup():
         logger.error("Błąd auto-backupu: %s", e)
 
 
+def _cron_trigger(expr: str) -> CronTrigger:
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        raise ValueError("Wyrażenie cron musi mieć 5 pól")
+    return CronTrigger(minute=parts[0], hour=parts[1], day=parts[2], month=parts[3], day_of_week=parts[4])
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
+    cron_expr = db.get_settings()["backup_cron"]
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         _auto_backup,
-        CronTrigger(hour=4, minute=0),
+        _cron_trigger(cron_expr),
         id="daily_backup",
         replace_existing=True,
     )
     scheduler.start()
+    app.state.scheduler = scheduler
     yield
     scheduler.shutdown(wait=False)
 
@@ -70,6 +79,28 @@ class SnapshotCreate(BaseModel):
 class SnapshotUpdate(BaseModel):
     date: Optional[str] = None
     entries: Optional[List[EntryInput]] = None
+
+
+class SettingsUpdate(BaseModel):
+    backup_cron: str
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/settings")
+def get_settings():
+    return db.get_settings()
+
+
+@app.patch("/api/settings")
+def update_settings(body: SettingsUpdate, request: Request):
+    try:
+        trigger = _cron_trigger(body.backup_cron)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    saved = db.save_settings(body.backup_cron)
+    request.app.state.scheduler.reschedule_job("daily_backup", trigger=trigger)
+    return saved
 
 
 # ── Accounts ──────────────────────────────────────────────────────────────────

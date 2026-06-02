@@ -492,10 +492,15 @@ select option{background:var(--bg-card)}
     </div>
   </div>
 
-  <p class="text-sm text-muted" style="margin-top:10px;">
-    Automatyczny backup wykonywany codziennie o&nbsp;4:00. Przechowywane są ostatnie 30&nbsp;kopii.
-    Można też przywrócić dane wczytując plik .db&nbsp;pobrany wcześniej na&nbsp;dysk.
-  </p>
+  <div class="card" style="margin-top:16px; padding:16px 20px;">
+    <p style="font-size:.8125rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:12px;">Harmonogram automatycznego backupu</p>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <input id="cron-input" type="text" placeholder="0 4 * * *" style="font-family:monospace; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg); color:var(--text); font-size:.875rem; flex:1; min-width:140px;" />
+      <button class="btn btn-primary" onclick="saveCron()" style="white-space:nowrap;">Zapisz harmonogram</button>
+    </div>
+    <p id="cron-msg" style="display:none; font-size:.8125rem; margin-top:8px;"></p>
+    <p style="font-size:.8125rem; color:var(--text-muted); margin-top:8px;">Format cron: minuta godzina dzień miesiąc dzień_tygodnia. Przechowywanych jest ostatnie 30&nbsp;kopii.</p>
+  </div>
 </div>
 
 </main>
@@ -639,7 +644,7 @@ function switchTab(tab) {
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'history')   renderHistory();
   if (tab === 'accounts')  renderAccounts();
-  if (tab === 'backup')    loadBackups();
+  if (tab === 'backup')    { loadBackups(); loadCronSetting(); }
 }
 
 // ── Dashboard rendering ────────────────────────────────────────────────────
@@ -1382,6 +1387,30 @@ async function deleteBackup(filename) {
     }
     await loadBackups();
   } catch(e) { showBackupMsg('Błąd usuwania: ' + e.message, false); }
+}
+
+// ── Cron settings ──────────────────────────────────────────────────────────
+async function loadCronSetting() {
+  try {
+    const s = await GET('/api/settings');
+    document.getElementById('cron-input').value = s.backup_cron || '0 4 * * *';
+  } catch(e) { /* ignore */ }
+}
+
+async function saveCron() {
+  const cron = document.getElementById('cron-input').value.trim();
+  const msg = document.getElementById('cron-msg');
+  try {
+    await PATCH('/api/settings', { backup_cron: cron });
+    msg.textContent = 'Harmonogram zapisany.';
+    msg.style.color = 'var(--green, #22c55e)';
+    msg.style.display = '';
+    setTimeout(() => { msg.style.display = 'none'; }, 3000);
+  } catch(e) {
+    msg.textContent = 'Błąd: ' + e.message;
+    msg.style.color = 'var(--red, #ef4444)';
+    msg.style.display = '';
+  }
 }
 
 // ── Export / Import ────────────────────────────────────────────────────────
