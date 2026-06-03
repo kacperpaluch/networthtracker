@@ -1,5 +1,7 @@
 # Net Worth Tracker
 
+[![Docker Hub](https://img.shields.io/docker/pulls/kpa90/networthtracker?logo=docker&label=Docker+Hub)](https://hub.docker.com/r/kpa90/networthtracker)
+
 Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwala rejestrować salda kont bankowych, inwestycji i zobowiązań w formie okresowych snapshotów, a następnie wizualizować trendy i analizować strukturę majątku.
 
 ---
