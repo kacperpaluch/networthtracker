@@ -442,6 +442,16 @@ def sync_entry(date: str, account_name: str, value: float) -> dict:
         else:
             cur = conn.execute("INSERT INTO snapshots (date) VALUES (?)", (date,))
             snapshot_id = cur.lastrowid
+            # Przepisz wartości z ostatniego snapshotu przed tą datą
+            prev = conn.execute(
+                "SELECT id FROM snapshots WHERE date < ? ORDER BY date DESC LIMIT 1",
+                (date,)
+            ).fetchone()
+            if prev:
+                conn.execute("""
+                    INSERT INTO entries (snapshot_id, account_id, value)
+                    SELECT ?, account_id, value FROM entries WHERE snapshot_id = ?
+                """, (snapshot_id, prev["id"]))
 
         conn.execute("""
             INSERT INTO entries (snapshot_id, account_id, value)
