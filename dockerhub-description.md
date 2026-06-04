@@ -12,6 +12,7 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Rejes
 - Historia snapshotów z rozwijanymi detalami
 - Zarządzanie kontami: dodawanie, edycja, archiwizacja
 - Backup: automatyczny wg harmonogramu cron, ręczny z UI, przywracanie
+- **Sync API** — `POST /api/sync` do integracji z n8n lub innymi automatyzacjami
 - Eksport / Import danych w formacie JSON
 - Responsywny ciemny motyw (dark mode)
 
@@ -44,6 +45,18 @@ Aplikacja dostępna pod: `http://<host>:8026`
 | `DB_PATH` | `data/networth.db` | Ścieżka do pliku bazy SQLite |
 | `BACKUP_DIR` | `<katalog DB>/backups` | Katalog na pliki backup |
 | `BACKUP_KEEP` | `30` | Liczba zachowywanych automatycznych backupów |
+
+## Sync API (integracja z n8n)
+
+```json
+POST /api/sync
+[
+  {"date": "2026-06-04", "account_name": "mBank", "value": 12500.00},
+  {"date": "2026-06-04", "account_name": "Oszczędności", "value": 45000.00}
+]
+```
+
+Endpoint tworzy lub aktualizuje snapshot dla danej daty. Nazwy kont dopasowywane case-insensitively. Nieznane konta zwracają błąd w polu `errors`, pozostałe i tak się zapisują.
 
 ## Platformy
 

@@ -85,6 +85,12 @@ class SettingsUpdate(BaseModel):
     backup_cron: str
 
 
+class SyncEntry(BaseModel):
+    date: str
+    account_name: str
+    value: float
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/settings")
@@ -171,6 +177,20 @@ def remove_snapshot(snapshot_id: int):
         return db.delete_snapshot(snapshot_id)
     except LookupError as e:
         raise HTTPException(404, str(e))
+
+
+# ── Sync (n8n / automation) ───────────────────────────────────────────────────
+
+@app.post("/api/sync")
+def sync_entries(body: List[SyncEntry]):
+    synced, errors = [], []
+    for item in body:
+        try:
+            db.sync_entry(item.date, item.account_name, item.value)
+            synced.append({"date": item.date, "account_name": item.account_name})
+        except LookupError as e:
+            errors.append({"date": item.date, "account_name": item.account_name, "error": str(e)})
+    return {"synced": synced, "errors": errors}
 
 
 # ── Chart data ────────────────────────────────────────────────────────────────

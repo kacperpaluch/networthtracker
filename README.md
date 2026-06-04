@@ -17,6 +17,7 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 - **Zarządzanie kontami**: dodawanie, edycja, archiwizacja, usuwanie
 - **Backup**: automatyczny wg konfigurowalnego harmonogramu cron (domyślnie 4:00), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku; harmonogram ustawiany z poziomu zakładki Backup (działa bez restartu)
 - **Eksport / Import** danych w formacie JSON
+- **Sync API** (`POST /api/sync`) — endpoint do automatycznej aktualizacji stanów kont z zewnętrznych źródeł (np. n8n); przyjmuje tablicę `[{date, account_name, value}]`, tworzy lub aktualizuje snapshot
 - Responsywny ciemny motyw (dark mode)
 
 ---
@@ -176,6 +177,22 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 | POST | `/api/backup/restore/{filename}` | Przywróć z backupu serwerowego |
 | POST | `/api/backup/restore-upload` | Przywróć z pliku .db (FormData: `file`) |
 | DELETE | `/api/backup/{filename}` | Usuń backup |
+
+### Sync — automatyczna aktualizacja z zewnętrznych źródeł (n8n itp.)
+
+| Metoda | Endpoint | Opis |
+|---|---|---|
+| POST | `/api/sync` | Upsert wpisów `[{date, account_name, value}]` — tworzy lub aktualizuje snapshot |
+
+Przykład payloadu:
+```json
+[
+  {"date": "2026-06-04", "account_name": "mBank", "value": 12500.00},
+  {"date": "2026-06-04", "account_name": "Oszczędności", "value": 45000.00}
+]
+```
+
+Odpowiedź zawiera pola `synced` (udane) i `errors` (nieznane/zarchiwizowane konta). Nazwy kont są dopasowywane case-insensitively.
 
 ### JSON export / import
 

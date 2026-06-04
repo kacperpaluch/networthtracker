@@ -425,6 +425,33 @@ def delete_backup(filename: str) -> dict:
     return {"ok": True}
 
 
+# ── Sync (n8n / automation) ───────────────────────────────────────────────────
+
+def sync_entry(date: str, account_name: str, value: float) -> dict:
+    with get_db() as conn:
+        account = conn.execute(
+            "SELECT * FROM accounts WHERE lower(name) = lower(?) AND archived = 0",
+            (account_name,)
+        ).fetchone()
+        if not account:
+            raise LookupError(f"Konto '{account_name}' nie istnieje lub jest zarchiwizowane")
+
+        snap = conn.execute("SELECT id FROM snapshots WHERE date = ?", (date,)).fetchone()
+        if snap:
+            snapshot_id = snap["id"]
+        else:
+            cur = conn.execute("INSERT INTO snapshots (date) VALUES (?)", (date,))
+            snapshot_id = cur.lastrowid
+
+        conn.execute("""
+            INSERT INTO entries (snapshot_id, account_id, value)
+            VALUES (?, ?, ?)
+            ON CONFLICT(snapshot_id, account_id) DO UPDATE SET value = excluded.value
+        """, (snapshot_id, account["id"], value))
+
+        return _snapshot_with_entries(conn, snapshot_id)
+
+
 # ── JSON export / import ──────────────────────────────────────────────────────
 
 def export_data() -> dict:
