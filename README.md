@@ -63,7 +63,16 @@ networthtracker/
 ├── Dockerfile           # Obraz Dockera (python:3.12-slim)
 ├── docker-compose.yml   # Konfiguracja uruchomienia kontenera
 ├── static/
-│   └── index.html       # Cały frontend: HTML + CSS + JavaScript (SPA)
+│   ├── index.html       # Struktura HTML (SPA), linki do CSS/JS, wyłącznie markup
+│   ├── style.css        # Cały CSS (zmienne, layout, karty, tabela, modale, formularze)
+│   └── js/
+│       ├── app.js       # Stan globalny S, init, routing zakładek, refresh danych
+│       ├── utils.js     # Narzędzia: fmtCurrency, fmtDate, esc, API helpers, modale
+│       ├── charts.js    # Wykresy Chart.js: wartość netto (liniowy), rozbicie na konta (stacked)
+│       ├── dashboard.js # Render dashboardu: karty podsumowania, porównanie, trendy, struktura
+│       ├── history.js   # Historia snapshotów, modal tworzenia/edycji snapshotu
+│       ├── accounts.js  # Lista kont, modal tworzenia/edycji konta, archiwizacja
+│       └── backup.js    # Backup (lista, tworzenie, pobieranie, przywracanie), cron, export/import
 └── data/
     └── networth.db      # Baza danych SQLite (generowana automatycznie)
 ```
@@ -82,10 +91,21 @@ networthtracker/
 - Zapytania analityczne: seria czasowa, rozbicie na konta, statystyki, porównanie okresów
 - Eksport / import całej bazy
 
-**`static/index.html`** — Single Page Application. Zawiera:
-- CSS (CSS custom properties / variables, dark theme, responsive grid)
-- HTML strukturę: nav z 3 zakładkami, 2 modale (snapshot, account)
-- JavaScript: globalny stan `S`, wywołania `fetch`, renderowanie widoków, Chart.js
+**`static/index.html`** — struktura HTML Single Page Application (nav, 4 zakładki, 2 modale). CSS i JavaScript wydzielone do osobnych plików w `static/style.css` i `static/js/*.js`.
+
+**`static/js/app.js`** — globalny stan `S`, inicjalizacja (`init`), przełączanie zakładek (`switchTab`), odświeżanie danych (`refresh`).
+
+**`static/js/utils.js`** — funkcje pomocnicze: formatowanie waluty/daty, eskejpowanie HTML, helpery API (`GET`, `POST`, `PATCH`, `DELETE`), otwieranie/zamykanie modali.
+
+**`static/js/charts.js`** — renderowanie wykresów Chart.js: liniowy net worth (z gradientem zielony/czerwony) oraz stacked area chart rozbicia na konta.
+
+**`static/js/dashboard.js`** — render dashboardu: karty podsumowania, porównanie okresów (presety + własne daty), trendy (śr. miesięczna, CAGR), struktura majątku (procentowe słupki, wskaźnik D/A).
+
+**`static/js/history.js`** — tabela historii snapshotów z możliwością rozwijania wpisów, modal tworzenia/edycji snapshotu z pre-fillem wartości z poprzedniego.
+
+**`static/js/accounts.js`** — lista kont (aktywa/zobowiązania) z możliwością edycji, archiwizacji, przywracania i usuwania.
+
+**`static/js/backup.js`** — zarządzanie backupami (lista, tworzenie, pobieranie, przywracanie z serwera i z pliku, usuwanie), harmonogram cron, eksport/import JSON.
 
 ---
 
@@ -318,7 +338,7 @@ db.py (warstwa danych)
 SQLite (data/networth.db)
 ```
 
-Frontend jest **Single Page Application** — cały UI jest w jednym pliku `index.html`. Po załadowaniu strony JavaScript pobiera dane z API i renderuje DOM dynamicznie. Nie ma żadnego frameworku JS — czysty Vanilla JS z `fetch()`.
+Frontend jest **Single Page Application** — struktura HTML w `index.html`, style w `style.css`, a logika podzielona na moduły JS w `static/js/`. Każdy moduł to IIFE komunikujące się przez globalny obiekt `window`. Po załadowaniu strony JavaScript pobiera dane z API i renderuje DOM dynamicznie. Nie ma żadnego frameworku JS — czysty Vanilla JS z `fetch()`.
 
 ---
 
