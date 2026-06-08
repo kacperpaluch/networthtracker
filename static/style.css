@@ -395,3 +395,48 @@ select option{background:var(--bg-card)}
   background:linear-gradient(135deg,rgba(224,160,32,.04) 0%,var(--bg-card) 60%);
   border-color:rgba(224,160,32,.2);
 }
+
+/* Waterfall bars */
+.waterfall-row{
+  display:flex;align-items:center;gap:8px;padding:4px 0;
+}
+.waterfall-name{
+  width:110px;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.waterfall-bar-wrap{flex:1;height:6px;background:var(--border-subtle);border-radius:3px;overflow:hidden}
+.waterfall-bar{height:100%;border-radius:3px;transition:width .4s cubic-bezier(.4,0,.2,1)}
+.wfall-pos{background:linear-gradient(90deg,var(--green),#34d399)}
+.wfall-neg{background:linear-gradient(90deg,var(--red),#f87171)}
+.waterfall-val{font-family:'JetBrains Mono',monospace;font-size:.8rem;width:110px;text-align:right;white-space:nowrap}
+
+/* Milestone progress */
+.milestone-bar-wrap{height:10px;border-radius:5px;background:var(--border-subtle);overflow:hidden}
+.milestone-bar{
+  height:100%;border-radius:5px;
+  background:linear-gradient(90deg,var(--green),#34d399);
+  transition:width .5s cubic-bezier(.4,0,.2,1);
+  box-shadow:0 0 12px var(--green-glow);
+}
+.milestone-bar-down{
+  background:linear-gradient(90deg,var(--red),#f87171);
+  box-shadow:0 0 12px rgba(240,79,71,.25);
+}
+.milestone-bar-done{
+  background:linear-gradient(90deg,#34d399,var(--green));
+  box-shadow:0 0 8px var(--green-glow);
+}
+.milestone-row{
+  padding:8px 0;border-bottom:1px solid var(--border-subtle);
+}
+.milestone-row:last-child{border-bottom:none}
+.milestone-top{display:flex;align-items:center;gap:8px}
+.milestone-label{flex:1;font-size:.825rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.milestone-target{font-size:.85rem;font-weight:500}
+.milestone-check{font-size:1rem}
+.milestone-remaining{white-space:nowrap}
+.milestone-meta{display:flex;gap:8px;align-items:center;margin-top:2px}
+.milestone-meta .milestone-days{font-size:.75rem}
+.milestone-actions{display:flex;gap:2px;justify-content:flex-end;margin-top:4px}
+
+/* Sparklines in history table */
+.sparkline-svg{display:block;vertical-align:middle}

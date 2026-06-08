@@ -87,6 +87,22 @@
       <div class="chart-wrap"><canvas id="chart-nw"></canvas></div>
     </div>
 
+    <!-- Monthly changes + Donut allocation -->
+    <div class="grid-2">
+      <div class="card chart-card">
+        <div class="chart-header">
+          <h3 class="section-title" style="margin-bottom:0">Miesi&#x119;czne zmiany net worth</h3>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-monthly"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-header">
+          <h3 class="section-title" style="margin-bottom:0">Alokacja aktyw&#xF3;w</h3>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-donut"></canvas></div>
+      </div>
+    </div>
+
     <!-- Bottom grid: breakdown + compare + structure -->
     <div class="grid-2">
       <!-- Stacked breakdown chart -->
@@ -117,12 +133,13 @@
       </div>
     </div>
 
-    <!-- Trend pills + asset structure -->
-    <div class="grid-2">
+    <!-- Trend pills + asset structure + milestone -->
+    <div class="grid-3">
       <div class="card">
         <h3 class="section-title">Trendy</h3>
         <div class="stat-pills" id="trend-pills"></div>
       </div>
+      <div class="card" id="milestone-widget"></div>
       <div class="card">
         <h3 class="section-title">Struktura maj&#x105;tku</h3>
         <div id="asset-structure"></div>
@@ -148,6 +165,7 @@
         <thead>
           <tr>
             <th style="width:32px"></th>
+            <th style="width:70px">Trend</th>
             <th>Data</th>
             <th>Warto&#x15B;&#x107; netto</th>
             <th>Aktywa</th>

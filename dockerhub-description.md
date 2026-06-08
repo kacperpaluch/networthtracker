@@ -4,16 +4,18 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Rejes
 
 ## Funkcjonalności
 
-- Dashboard z kartami: wartość netto, aktywa, zobowiązania, zmiana YTD
-- Wykresy: liniowy wykres wartości netto + rozbicie na konta (stacked area)
-- Porównanie okresów (miesiąc / kwartał / rok lub własne daty)
-- Trendy: średnia miesięczna zmiana, CAGR
-- Struktura majątku: procent każdego konta, wskaźnik D/A
-- Historia snapshotów z rozwijanymi detalami
-- Zarządzanie kontami: dodawanie, edycja, archiwizacja
-- Backup: automatyczny wg harmonogramu cron, ręczny z UI, przywracanie
-- **Sync API** — `POST /api/sync` do integracji z n8n lub innymi automatyzacjami
-- Eksport / Import danych w formacie JSON
+- **Dashboard** z kartami: wartość netto, aktywa, zobowiązania, zmiana YTD
+- **Wykresy**: liniowy net worth (z SMA + projekcją), słupkowy miesięcznych zmian, stacked area rozbicia na konta, donut alokacji aktywów
+- **Waterfall chart**: wpływ poszczególnych kont na zmianę net worth
+- **Porównanie okresów** (miesiąc / kwartał / rok / własne daty) z waterfall
+- **Trendy**: śr. miesięczna zmiana, CAGR, zmienność, najlepszy/najgorszy miesiąc, tempo wzrostu per konto
+- **Cele finansowe**: timeline wielu celów z datami, kwotami i paskami postępu
+- **Struktura majątku**: procent kont w aktywach, wskaźnik D/A
+- **Historia snapshotów**: tabela ze sparkline (mini wykres trendu) i rozwijanymi detalami
+- **Zarządzanie kontami**: dodawanie, edycja, archiwizacja
+- **Backup**: automatyczny wg cron, ręczny z UI, przywracanie z pliku
+- **Sync API** — `POST /api/sync` do integracji z n8n
+- **Eksport / Import** JSON
 - Responsywny ciemny motyw (dark mode)
 
 ## Uruchomienie
@@ -56,12 +58,17 @@ POST /api/sync
 ]
 ```
 
-Endpoint tworzy lub aktualizuje snapshot dla danej daty. Nazwy kont dopasowywane case-insensitively. Nieznane konta zwracają błąd w polu `errors`, pozostałe i tak się zapisują.
+## Cele finansowe (milestones)
+
+```json
+POST /api/milestones
+{"target_date": "2027-06-01", "target_value": 0, "label": "Zero długu!"}
+```
 
 ## Platformy
 
-`linux/amd64` + `linux/arm64` (Raspberry Pi, Orange Pi itp.)
+`linux/amd64` + `linux/arm64` (Raspberry Pi, Orange Pi)
 
 ## Stack
 
-Python 3.12 · FastAPI · SQLite · APScheduler · Vanilla JS · Chart.js
+Python 3.12 · FastAPI · SQLite · APScheduler · Chart.js 4.4 · Vanilla JS

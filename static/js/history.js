@@ -3,7 +3,7 @@
 window.renderHistory = function renderHistory() {
   var tbody = document.getElementById('history-tbody');
   if (!window.S.snapshots.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)">Brak snapshotow. <a href="#" onclick="openSnapshotModal();return false" style="color:var(--green)">Dodaj pierwszy</a>.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">Brak snapshotow. <a href="#" onclick="openSnapshotModal();return false" style="color:var(--green)">Dodaj pierwszy</a>.</td></tr>';
     return;
   }
   var prev = {};
@@ -11,6 +11,33 @@ window.renderHistory = function renderHistory() {
   reversed.forEach(function(s, i) {
     if (i > 0) prev[s.id] = reversed[i-1].net_worth;
   });
+
+  var series = window.S.series;
+  var sparkNW = series.map(function(s) { return s.net_worth; });
+  var nwMin = Math.min.apply(null, sparkNW);
+  var nwMax = Math.max.apply(null, sparkNW);
+  var nwRange = nwMax - nwMin || 1;
+
+  function buildSparkline(uptoDate) {
+    var pts = [];
+    for (var i = 0; i < series.length; i++) {
+      pts.push(series[i]);
+      if (series[i].date === uptoDate) break;
+    }
+    if (pts.length < 2) return '';
+    var w = 64, h = 20, pad = 2;
+    var xStep = (w - pad * 2) / (pts.length - 1);
+    var points = pts.map(function(p, i) {
+      var x = pad + i * xStep;
+      var y = pad + h - pad * 2 - ((p.net_worth - nwMin) / nwRange) * (h - pad * 2);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    var lastVal = pts[pts.length - 1].net_worth;
+    var color = lastVal >= 0 ? '#10b981' : '#f85149';
+    return '<svg width="' + w + '" height="' + h + '" class="sparkline-svg">' +
+      '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>';
+  }
 
   tbody.innerHTML = window.S.snapshots.map(function(s) {
     var p = prev[s.id];
@@ -29,6 +56,7 @@ window.renderHistory = function renderHistory() {
       '<button class="btn btn-icon" onclick="toggleExpand(' + s.id + ')" id="expand-btn-' + s.id + '" title="Rozwin">' +
       '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z"/></svg>' +
       '</button></td>' +
+      '<td>' + buildSparkline(s.date) + '</td>' +
       '<td class="td-date">' + window.fmtDate(s.date) + '</td>' +
       '<td class="td-mono">' + window.fmtCurrency(s.net_worth) + ' ' + changeStr + '</td>' +
       '<td class="td-mono text-pos">' + window.fmtCurrency(s.total_assets) + '</td>' +
@@ -41,7 +69,7 @@ window.renderHistory = function renderHistory() {
       '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.748 1.748 0 0 1 10.595 15h-5.19a1.75 1.75 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15ZM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25Z"/></svg>' +
       '</button></div></td></tr>' +
       '<tr class="expandable-row" id="expand-row-' + s.id + '">' +
-      '<td colspan="6"><div class="entries-grid">' + (entriesHtml || '<span class="text-muted">Brak wpisow</span>') + '</div></td></tr>';
+      '<td colspan="7"><div class="entries-grid">' + (entriesHtml || '<span class="text-muted">Brak wpisow</span>') + '</div></td></tr>';
   }).join('');
 };
 

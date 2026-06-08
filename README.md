@@ -9,11 +9,17 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 ## Funkcjonalności
 
 - **Dashboard** z kartami podsumowania (wartość netto, aktywa, zobowiązania, zmiana YTD)
-- **Wykresy**: liniowy wykres wartości netto w czasie + rozbicie na poszczególne konta (stacked area chart)
-- **Porównanie okresów** (miesiąc / kwartał / rok lub daty własne) z najlepszym i najgorszym kontem
-- **Trendy**: średnia miesięczna zmiana, CAGR (roczna stopa wzrostu)
+- **Wykresy**:
+  - Liniowy wykres wartości netto w czasie z linią SMA (średnia krocząca) i projekcją liniową
+  - Wykres słupkowy miesięcznych zmian net worth (zielone/czerwone słupki)
+  - Stacked area chart — rozbicie na poszczególne konta
+  - Donut chart — struktura alokacji aktywów
+- **Waterfall chart**: rozbicie wpływu poszczególnych kont na zmianę net worth pomiędzy dwoma datami
+- **Porównanie okresów** (miesiąc / kwartał / rok lub daty własne) z najlepszym i najgorszym kontem + waterfall
+- **Trendy**: średnia miesięczna zmiana, CAGR (roczna stopa wzrostu), zmienność (odchylenie std), najlepszy/najgorszy miesiąc, tempo wzrostu per konto
+- **Kamienie milowe**: timeline celów finansowych z datami docelowymi, kwotami i paskami postępu. Dodawaj wiele celów (np. spłata długu, pierwsze oszczędności, FIRE) — każdy z własną datą, etykietą i wizualnym postępem. Osiągnięte cele są wyszarzone z ptaszkiem.
 - **Struktura majątku**: procent każdego konta w aktywach, wskaźnik D/A (dług do aktywów)
-- **Historia snapshotów**: tabela ze zwijalnymi detalami
+- **Historia snapshotów**: tabela ze zwijalnymi detalami + sparkline (miniaturowy wykres trendu) dla każdego wiersza
 - **Zarządzanie kontami**: dodawanie, edycja, archiwizacja, usuwanie
 - **Backup**: automatyczny wg konfigurowalnego harmonogramu cron (domyślnie 4:00), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku; harmonogram ustawiany z poziomu zakładki Backup (działa bez restartu)
 - **Eksport / Import** danych w formacie JSON
@@ -88,7 +94,8 @@ networthtracker/
 - Inicjalizację schematu (`init_db`)
 - Context manager `get_db()` z auto-commit / rollback i włączonymi foreign keys
 - CRUD dla kont i snapshotów
-- Zapytania analityczne: seria czasowa, rozbicie na konta, statystyki, porównanie okresów
+- Zapytania analityczne: seria czasowa, rozbicie na konta, statystyki (CAGR, zmienność, najlepszy/najgorszy miesiąc, tempo wzrostu kont), miesięczne zmiany, porównanie okresów
+- CRUD dla celów finansowych (milestones)
 - Eksport / import całej bazy
 
 **`static/index.html`** — struktura HTML Single Page Application (nav, 4 zakładki, 2 modale). CSS i JavaScript wydzielone do osobnych plików w `static/style.css` i `static/js/*.js`.
@@ -97,11 +104,11 @@ networthtracker/
 
 **`static/js/utils.js`** — funkcje pomocnicze: formatowanie waluty/daty, eskejpowanie HTML, helpery API (`GET`, `POST`, `PATCH`, `DELETE`), otwieranie/zamykanie modali.
 
-**`static/js/charts.js`** — renderowanie wykresów Chart.js: liniowy net worth (z gradientem zielony/czerwony) oraz stacked area chart rozbicia na konta.
+**`static/js/charts.js`** — renderowanie wykresów Chart.js: liniowy net worth (z SMA + projekcją), stacked area rozbicia na konta, donut alokacji aktywów, słupkowy miesięcznych zmian.
 
-**`static/js/dashboard.js`** — render dashboardu: karty podsumowania, porównanie okresów (presety + własne daty), trendy (śr. miesięczna, CAGR), struktura majątku (procentowe słupki, wskaźnik D/A).
+**`static/js/dashboard.js`** — render dashboardu: karty podsumowania, porównanie okresów (presety + własne daty z waterfall), trendy (śr. miesięczna, CAGR, zmienność, najlepszy/najgorszy miesiąc, tempo wzrostu kont), struktura majątku, kamień milowy.
 
-**`static/js/history.js`** — tabela historii snapshotów z możliwością rozwijania wpisów, modal tworzenia/edycji snapshotu z pre-fillem wartości z poprzedniego.
+**`static/js/history.js`** — tabela historii snapshotów z możliwością rozwijania wpisów, sparkline (mini wykres trendu) w każdym wierszu, modal tworzenia/edycji snapshotu z pre-fillem wartości z poprzedniego.
 
 **`static/js/accounts.js`** — lista kont (aktywa/zobowiązania) z możliwością edycji, archiwizacji, przywracania i usuwania.
 
@@ -131,8 +138,16 @@ entries
   UNIQUE(snapshot_id, account_id)
 
 settings
-  id          INTEGER PK CHECK(id = 1)  -- singleton
-  backup_cron TEXT DEFAULT '0 4 * * *'  -- wyrażenie cron harmonogramu backupu
+  id             INTEGER PK CHECK(id = 1)  -- singleton
+  backup_cron    TEXT DEFAULT '0 4 * * *'  -- wyrażenie cron harmonogramu backupu
+  milestone_goal REAL                      -- [deprecated] pojedynczy cel (zastąpiony przez milestones)
+
+milestones
+  id           INTEGER PK AUTOINCREMENT
+  target_date  TEXT NOT NULL               -- format: 'YYYY-MM-DD'
+  target_value REAL NOT NULL               -- docelowa wartość net worth
+  label        TEXT                        -- opcjonalna etykieta
+  created_at   TEXT DEFAULT datetime('now')
 ```
 
 **Ważne reguły:**
@@ -177,8 +192,18 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
-| GET | `/api/stats/summary` | Podsumowanie: bieżące wartości, YTD, CAGR, śr. miesięczna |
-| GET | `/api/stats/compare?from=YYYY-MM-DD&to=YYYY-MM-DD` | Porównanie dwóch dat |
+| GET | `/api/stats/summary` | Podsumowanie: bieżące wartości, YTD, CAGR, śr. miesięczna, zmienność, najlepszy/najgorszy miesiąc, tempo wzrostu kont, dni śledzenia |
+| GET | `/api/stats/compare?from=YYYY-MM-DD&to=YYYY-MM-DD` | Porównanie dwóch dat z wpływem poszczególnych kont |
+| GET | `/api/stats/monthly` | Miesięczne zmiany net worth (do wykresu słupkowego) |
+
+### Kamienie milowe (`/api/milestones`)
+
+| Metoda | Endpoint | Opis |
+|---|---|---|
+| GET | `/api/milestones` | Lista celów (sortowane po dacie) |
+| POST | `/api/milestones` | Utwórz cel `{target_date, target_value, label?}` |
+| PATCH | `/api/milestones/{id}` | Edytuj cel |
+| DELETE | `/api/milestones/{id}` | Usuń cel |
 
 ### Ustawienia (`/api/settings`)
 

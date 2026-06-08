@@ -56,11 +56,23 @@ def init_db():
                 UNIQUE(snapshot_id, account_id)
             );
             CREATE TABLE IF NOT EXISTS settings (
-                id          INTEGER PRIMARY KEY CHECK(id = 1),
-                backup_cron TEXT NOT NULL DEFAULT '0 4 * * *'
+                id             INTEGER PRIMARY KEY CHECK(id = 1),
+                backup_cron    TEXT NOT NULL DEFAULT '0 4 * * *',
+                milestone_goal REAL
             );
             INSERT OR IGNORE INTO settings (id, backup_cron) VALUES (1, '0 4 * * *');
+            CREATE TABLE IF NOT EXISTS milestones (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_date  TEXT    NOT NULL,
+                target_value REAL    NOT NULL,
+                label        TEXT,
+                created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+            );
         """)
+        # Migration: add milestone_goal column if missing
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(settings)").fetchall()]
+        if "milestone_goal" not in cols:
+            conn.execute("ALTER TABLE settings ADD COLUMN milestone_goal REAL")
 
 
 # ── Accounts ──────────────────────────────────────────────────────────────────
@@ -283,6 +295,28 @@ def get_stats_summary() -> dict:
         if total_assets:
             result["debt_to_assets"] = total_liabs / total_assets
 
+    if n >= 1:
+        d_last = datetime.strptime(latest["date"], "%Y-%m-%d")
+        d_first = datetime.strptime(series[0]["date"], "%Y-%m-%d")
+        result["days_tracked"] = (d_last - d_first).days + 1
+        result["first_date"] = series[0]["date"]
+        result["last_date"] = latest["date"]
+
+    monthly = get_monthly_changes()
+    mchanges = [m["change"] for m in monthly if m["change"] is not None]
+    if len(mchanges) >= 2:
+        mean = sum(mchanges) / len(mchanges)
+        variance = sum((c - mean) ** 2 for c in mchanges) / len(mchanges)
+        result["volatility"] = round(variance**0.5, 2)
+        best_val = max(mchanges)
+        worst_val = min(mchanges)
+        best_idx = mchanges.index(best_val)
+        worst_idx = mchanges.index(worst_val)
+        result["best_month"] = {"month": monthly[best_idx + 1]["month"], "change": best_val}
+        result["worst_month"] = {"month": monthly[worst_idx + 1]["month"], "change": worst_val}
+
+    result["account_growth_rates"] = _get_account_growth_rates()
+
     return result
 
 
@@ -341,20 +375,162 @@ def get_stats_compare(from_date, to_date) -> dict:
     }
 
 
+# ── Monthly changes ───────────────────────────────────────────────────────────
+
+def get_monthly_changes() -> list:
+    series = get_networth_series()
+    if not series:
+        return []
+
+    monthly = {}
+    for s in series:
+        monthly[s["date"][:7]] = s
+
+    months = sorted(monthly.keys())
+    result = []
+    for i, m in enumerate(months):
+        cur = monthly[m]
+        entry = {
+            "month": m,
+            "net_worth": cur["net_worth"],
+            "assets": cur["assets"],
+            "liabilities": cur["liabilities"],
+        }
+        if i > 0:
+            prev = monthly[months[i - 1]]
+            entry["change"] = cur["net_worth"] - prev["net_worth"]
+            entry["change_pct"] = (
+                (entry["change"] / prev["net_worth"] * 100)
+                if prev["net_worth"] > 0
+                else None
+            )
+        else:
+            entry["change"] = None
+            entry["change_pct"] = None
+        result.append(entry)
+    return result
+
+
+def _get_account_growth_rates() -> list:
+    with get_db() as conn:
+        accounts = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE archived = 0 ORDER BY type, name"
+        ).fetchall()
+        result = []
+        for acc in accounts:
+            rows = conn.execute(
+                """SELECT s.date, e.value
+                   FROM entries e
+                   JOIN snapshots s ON s.id = e.snapshot_id
+                   WHERE e.account_id = ?
+                   ORDER BY s.date""",
+                (acc["id"],),
+            ).fetchall()
+            if len(rows) < 2:
+                continue
+            first = rows[0]
+            last = rows[-1]
+            d0 = datetime.strptime(first["date"], "%Y-%m-%d")
+            d1 = datetime.strptime(last["date"], "%Y-%m-%d")
+            span_months = (d1.year - d0.year) * 12 + d1.month - d0.month
+            if span_months <= 0:
+                continue
+            total_change = last["value"] - first["value"]
+            avg_change = total_change / span_months
+            result.append(
+                {
+                    "name": acc["name"],
+                    "type": acc["type"],
+                    "avg_monthly_change": round(avg_change, 2),
+                    "total_change": round(total_change, 2),
+                    "first_value": first["value"],
+                    "last_value": last["value"],
+                }
+            )
+        return sorted(result, key=lambda x: abs(x["avg_monthly_change"]), reverse=True)
+
+
+# ── Milestones ────────────────────────────────────────────────────────────────
+
+def get_milestones() -> list:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM milestones ORDER BY target_date"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_milestone(target_date: str, target_value: float, label: str = None) -> dict:
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO milestones (target_date, target_value, label) VALUES (?, ?, ?)",
+            (target_date, target_value, label),
+        )
+        return dict(
+            conn.execute(
+                "SELECT * FROM milestones WHERE id = ?", (cur.lastrowid,)
+            ).fetchone()
+        )
+
+
+def update_milestone(
+    milestone_id: int, target_date=None, target_value=None, label=None
+) -> dict:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM milestones WHERE id = ?", (milestone_id,)
+        ).fetchone()
+        if not row:
+            raise LookupError("Milestone not found")
+        updates, vals = [], []
+        if target_date is not None:
+            updates.append("target_date = ?"); vals.append(target_date)
+        if target_value is not None:
+            updates.append("target_value = ?"); vals.append(target_value)
+        if label is not None:
+            updates.append("label = ?"); vals.append(label)
+        if updates:
+            conn.execute(
+                f"UPDATE milestones SET {', '.join(updates)} WHERE id = ?",
+                vals + [milestone_id],
+            )
+        return dict(
+            conn.execute(
+                "SELECT * FROM milestones WHERE id = ?", (milestone_id,)
+            ).fetchone()
+        )
+
+
+def delete_milestone(milestone_id: int) -> dict:
+    with get_db() as conn:
+        if not conn.execute(
+            "SELECT id FROM milestones WHERE id = ?", (milestone_id,)
+        ).fetchone():
+            raise LookupError("Milestone not found")
+        conn.execute("DELETE FROM milestones WHERE id = ?", (milestone_id,))
+        return {"ok": True}
+
+
 # ── Settings ─────────────────────────────────────────────────────────────────
 
 def get_settings() -> dict:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
-        return dict(row) if row else {"id": 1, "backup_cron": "0 4 * * *"}
+        return dict(row) if row else {"id": 1, "backup_cron": "0 4 * * *", "milestone_goal": None}
 
 
-def save_settings(backup_cron: str) -> dict:
+def save_settings(backup_cron: str = None, milestone_goal: float = None) -> dict:
     with get_db() as conn:
-        conn.execute(
-            "UPDATE settings SET backup_cron = ? WHERE id = 1",
-            (backup_cron,),
-        )
+        if backup_cron is not None:
+            conn.execute(
+                "UPDATE settings SET backup_cron = ? WHERE id = 1",
+                (backup_cron,),
+            )
+        if milestone_goal is not None:
+            conn.execute(
+                "UPDATE settings SET milestone_goal = ? WHERE id = 1",
+                (milestone_goal,),
+            )
     return get_settings()
 
 

@@ -7,6 +7,9 @@ window.S = {
   series: [],
   breakdown: null,
   summary: null,
+  monthlyChanges: [],
+  milestones: [],
+  settings: null,
   editingSnapshotId: null,
   editingAccountId: null,
 };
@@ -23,12 +26,18 @@ window.loadAll = async function loadAll() {
     window.GET('/api/networth/series'),
     window.GET('/api/networth/breakdown'),
     window.GET('/api/stats/summary'),
+    window.GET('/api/stats/monthly'),
+    window.GET('/api/milestones'),
+    window.GET('/api/settings'),
   ]);
   window.S.accounts  = results[0];
   window.S.snapshots = results[1];
   window.S.series    = results[2];
   window.S.breakdown = results[3];
   window.S.summary   = results[4];
+  window.S.monthlyChanges = results[5];
+  window.S.milestones = results[6];
+  window.S.settings  = results[7];
 };
 
 // Tab switching
@@ -54,12 +63,18 @@ window.refresh = async function refresh() {
     window.GET('/api/networth/series'),
     window.GET('/api/networth/breakdown'),
     window.GET('/api/stats/summary'),
+    window.GET('/api/stats/monthly'),
+    window.GET('/api/milestones'),
+    window.GET('/api/settings'),
   ]);
   window.S.accounts  = results[0];
   window.S.snapshots = results[1];
   window.S.series    = results[2];
   window.S.breakdown = results[3];
   window.S.summary   = results[4];
+  window.S.monthlyChanges = results[5];
+  window.S.milestones = results[6];
+  window.S.settings  = results[7];
 };
 
 // Init

@@ -82,13 +82,59 @@ class SnapshotUpdate(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    backup_cron: str
+    backup_cron: Optional[str] = None
+    milestone_goal: Optional[float] = None
 
 
 class SyncEntry(BaseModel):
     date: str
     account_name: str
     value: float
+
+
+class MilestoneCreate(BaseModel):
+    target_date: str
+    target_value: float
+    label: Optional[str] = None
+
+
+class MilestoneUpdate(BaseModel):
+    target_date: Optional[str] = None
+    target_value: Optional[float] = None
+    label: Optional[str] = None
+
+
+# ── Milestones ────────────────────────────────────────────────────────────────
+
+@app.get("/api/milestones")
+def list_milestones():
+    return db.get_milestones()
+
+
+@app.post("/api/milestones", status_code=201)
+def add_milestone(body: MilestoneCreate):
+    try:
+        return db.create_milestone(body.target_date, body.target_value, body.label)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.patch("/api/milestones/{milestone_id}")
+def edit_milestone(milestone_id: int, body: MilestoneUpdate):
+    try:
+        return db.update_milestone(
+            milestone_id, body.target_date, body.target_value, body.label
+        )
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.delete("/api/milestones/{milestone_id}")
+def remove_milestone(milestone_id: int):
+    try:
+        return db.delete_milestone(milestone_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
 
 
 # ── Settings ──────────────────────────────────────────────────────────────────
@@ -100,12 +146,13 @@ def get_settings():
 
 @app.patch("/api/settings")
 def update_settings(body: SettingsUpdate, request: Request):
-    try:
-        trigger = _cron_trigger(body.backup_cron)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    saved = db.save_settings(body.backup_cron)
-    request.app.state.scheduler.reschedule_job("daily_backup", trigger=trigger)
+    if body.backup_cron is not None:
+        try:
+            trigger = _cron_trigger(body.backup_cron)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        request.app.state.scheduler.reschedule_job("daily_backup", trigger=trigger)
+    saved = db.save_settings(backup_cron=body.backup_cron, milestone_goal=body.milestone_goal)
     return saved
 
 
@@ -218,6 +265,11 @@ def stats_compare(
     to_date:   Optional[str] = Query(None, alias="to"),
 ):
     return db.get_stats_compare(from_date, to_date)
+
+
+@app.get("/api/stats/monthly")
+def stats_monthly():
+    return db.get_monthly_changes()
 
 
 # ── Backup — pliki .db ────────────────────────────────────────────────────────
