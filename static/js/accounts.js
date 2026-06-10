@@ -18,8 +18,10 @@ window.renderAccounts = function renderAccounts() {
     html += '<div class="accounts-group"><div class="accounts-group-title">' + label + '</div>';
     accounts.forEach(function(a) {
       var archBadge = a.archived ? '<span class="badge-archived">zarchiwizowane</span>' : '';
+      var catBadge = a.category ? '<span class="badge-archived" style="opacity:.8">' + window.esc(a.category) + '</span>' : '';
       html += '<div class="account-row ' + (a.archived ? 'archived' : '') + '">' +
         '<span class="account-name">' + window.esc(a.name) + '</span>' +
+        catBadge +
         archBadge +
         '<span class="account-badge ' + (a.type === 'asset' ? 'badge-asset' : 'badge-liability') + '">' + (a.type === 'asset' ? 'Aktywo' : 'Zobowiazanie') + '</span>' +
         '<div style="display:flex;gap:4px">' +
@@ -53,6 +55,7 @@ window.openAccountModal = function openAccountModal(accountId) {
   document.getElementById('account-modal-title').textContent = acc ? 'Edytuj konto' : 'Nowe konto';
   document.getElementById('account-name').value = acc ? acc.name : '';
   document.getElementById('account-type').value = acc ? acc.type : 'asset';
+  document.getElementById('account-category').value = acc ? (acc.category || '') : '';
   window.openModal('modal-account-overlay');
   setTimeout(function() { document.getElementById('account-name').focus(); }, 50);
 };
@@ -60,12 +63,13 @@ window.openAccountModal = function openAccountModal(accountId) {
 window.saveAccount = async function saveAccount() {
   var name = document.getElementById('account-name').value.trim();
   var type = document.getElementById('account-type').value;
+  var category = document.getElementById('account-category').value.trim();
   if (!name) { alert('Podaj nazwe konta.'); return; }
   try {
     if (window.S.editingAccountId) {
-      await window.PATCH('/api/accounts/' + window.S.editingAccountId, { name: name, type: type });
+      await window.PATCH('/api/accounts/' + window.S.editingAccountId, { name: name, type: type, category: category });
     } else {
-      await window.POST('/api/accounts', { name: name, type: type });
+      await window.POST('/api/accounts', { name: name, type: type, category: category || null });
     }
     window.closeModal('modal-account-overlay');
     await window.refresh();

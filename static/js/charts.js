@@ -258,9 +258,22 @@ window.renderAllocationDonut = function renderAllocationDonut() {
   var assets = structure.filter(function(a) { return a.type === 'asset' && a.value > 0; });
   if (!assets.length) return;
 
-  var labels = assets.map(function(a) { return a.name; });
-  var values = assets.map(function(a) { return a.value; });
-  var colors = assets.map(function(_, i) { return ASSET_COLORS[i % ASSET_COLORS.length]; });
+  // Jesli konta maja kategorie — grupuj po kategorii, inaczej per konto
+  var hasCategories = assets.some(function(a) { return a.category; });
+  var labels, values;
+  if (hasCategories) {
+    var byCat = {};
+    assets.forEach(function(a) {
+      var cat = a.category || 'Bez kategorii';
+      byCat[cat] = (byCat[cat] || 0) + a.value;
+    });
+    labels = Object.keys(byCat).sort(function(x, y) { return byCat[y] - byCat[x]; });
+    values = labels.map(function(c) { return byCat[c]; });
+  } else {
+    labels = assets.map(function(a) { return a.name; });
+    values = assets.map(function(a) { return a.value; });
+  }
+  var colors = labels.map(function(_, i) { return ASSET_COLORS[i % ASSET_COLORS.length]; });
 
   window._chartDonut = new Chart(canvas, {
     type: 'doughnut',

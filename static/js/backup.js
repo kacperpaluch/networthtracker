@@ -111,7 +111,24 @@ window.loadCronSetting = async function loadCronSetting() {
   try {
     var s = await window.GET('/api/settings');
     document.getElementById('cron-input').value = s.backup_cron || '0 4 * * *';
+    document.getElementById('webhook-input').value = s.webhook_url || '';
   } catch(e) { /* ignore */ }
+};
+
+window.saveWebhook = async function saveWebhook() {
+  var url = document.getElementById('webhook-input').value.trim();
+  var msg = document.getElementById('webhook-msg');
+  try {
+    await window.PATCH('/api/settings', { webhook_url: url });
+    msg.textContent = url ? 'Webhook zapisany.' : 'Webhook wylaczony.';
+    msg.style.color = 'var(--green, #22c55e)';
+    msg.style.display = '';
+    setTimeout(function() { msg.style.display = 'none'; }, 3000);
+  } catch(e) {
+    msg.textContent = 'Blad: ' + e.message;
+    msg.style.color = 'var(--red, #ef4444)';
+    msg.style.display = '';
+  }
 };
 
 window.saveCron = async function saveCron() {
@@ -149,7 +166,7 @@ window.importData = async function importData(event) {
     var text = await file.text();
     var data = JSON.parse(text);
     var res  = await window.POST('/api/import', data);
-    alert('Import zakonczony: ' + res.imported.accounts + ' kont, ' + res.imported.snapshots + ' snapshotow, ' + res.imported.entries + ' wpisow.');
+    alert('Import zakonczony: ' + res.imported.accounts + ' kont, ' + res.imported.snapshots + ' snapshotow, ' + res.imported.entries + ' wpisow, ' + (res.imported.milestones || 0) + ' celow.');
     await window.refresh();
     window.renderDashboard();
   } catch(e) {

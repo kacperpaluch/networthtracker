@@ -17,13 +17,15 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 - **Waterfall chart**: rozbicie wpływu poszczególnych kont na zmianę net worth pomiędzy dwoma datami
 - **Porównanie okresów** (miesiąc / kwartał / rok lub daty własne) z najlepszym i najgorszym kontem + waterfall
 - **Trendy**: średnia miesięczna zmiana, CAGR (roczna stopa wzrostu), zmienność (odchylenie std), najlepszy/najgorszy miesiąc, tempo wzrostu per konto
-- **Kamienie milowe**: timeline celów finansowych z datami docelowymi, kwotami i paskami postępu. Dodawaj wiele celów (np. spłata długu, pierwsze oszczędności, FIRE) — każdy z własną datą, etykietą i wizualnym postępem. Osiągnięte cele są wyszarzone z ptaszkiem.
+- **Kamienie milowe**: timeline celów finansowych z datami docelowymi, kwotami i paskami postępu. Dodawaj wiele celów (np. spłata długu, pierwsze oszczędności, FIRE) — każdy z własną datą, etykietą i wizualnym postępem. Osiągnięte cele są wyszarzone z ptaszkiem. Każdy nieosiągnięty cel pokazuje **ETA** — szacowany miesiąc osiągnięcia przy obecnym średnim tempie wzrostu.
+- **Kategorie kont**: opcjonalna kategoria (Gotówka, ETF / Akcje, Emerytura, Nieruchomości itd.) — gdy konta mają kategorie, donut alokacji grupuje aktywa po kategorii zamiast po koncie
 - **Struktura majątku**: procent każdego konta w aktywach, wskaźnik D/A (dług do aktywów)
 - **Historia snapshotów**: tabela ze zwijalnymi detalami + sparkline (miniaturowy wykres trendu) dla każdego wiersza
-- **Zarządzanie kontami**: dodawanie, edycja, archiwizacja, usuwanie
-- **Backup**: automatyczny wg konfigurowalnego harmonogramu cron (domyślnie 4:00), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku; harmonogram ustawiany z poziomu zakładki Backup (działa bez restartu)
-- **Eksport / Import** danych w formacie JSON
+- **Zarządzanie kontami**: dodawanie, edycja, archiwizacja, usuwanie; nazwy kont są unikalne (case-insensitive)
+- **Backup**: automatyczny wg konfigurowalnego harmonogramu cron (domyślnie 4:00), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku; harmonogram ustawiany z poziomu zakładki Backup (działa bez restartu). Przed każdym przywróceniem tworzony jest automatyczny backup bieżącej bazy, a przywracany plik jest walidowany (`PRAGMA integrity_check` + obecność wymaganych tabel).
+- **Eksport / Import** danych w formacie JSON (pełna baza: konta, snapshoty, wpisy, cele, ustawienia)
 - **Sync API** (`POST /api/sync`) — endpoint do automatycznej aktualizacji stanów kont z zewnętrznych źródeł (np. n8n); przyjmuje tablicę `[{date, account_name, value}]`, tworzy lub aktualizuje snapshot
+- **Webhook wychodzący** — opcjonalny URL (zakładka Backup), na który aplikacja wysyła POST JSON przy zdarzeniach: `snapshot_created`, `sync_completed`, `milestone_achieved` (każdy cel notyfikowany jednokrotnie)
 - Responsywny ciemny motyw (dark mode)
 
 ---
@@ -112,7 +114,7 @@ networthtracker/
 
 **`static/js/accounts.js`** — lista kont (aktywa/zobowiązania) z możliwością edycji, archiwizacji, przywracania i usuwania.
 
-**`static/js/backup.js`** — zarządzanie backupami (lista, tworzenie, pobieranie, przywracanie z serwera i z pliku, usuwanie), harmonogram cron, eksport/import JSON.
+**`static/js/backup.js`** — zarządzanie backupami (lista, tworzenie, pobieranie, przywracanie z serwera i z pliku, usuwanie), harmonogram cron, webhook wychodzący, eksport/import JSON.
 
 ---
 
@@ -121,8 +123,9 @@ networthtracker/
 ```sql
 accounts
   id          INTEGER PK AUTOINCREMENT
-  name        TEXT NOT NULL
+  name        TEXT NOT NULL  -- unikalne case-insensitive (indeks COLLATE NOCASE)
   type        TEXT NOT NULL  -- 'asset' | 'liability'
+  category    TEXT           -- opcjonalna kategoria (np. 'Gotówka', 'ETF / Akcje')
   archived    INTEGER DEFAULT 0  -- 0 = aktywne, 1 = zarchiwizowane
   created_at  TEXT DEFAULT datetime('now')
 
@@ -141,12 +144,14 @@ settings
   id             INTEGER PK CHECK(id = 1)  -- singleton
   backup_cron    TEXT DEFAULT '0 4 * * *'  -- wyrażenie cron harmonogramu backupu
   milestone_goal REAL                      -- [deprecated] pojedynczy cel (zastąpiony przez milestones)
+  webhook_url    TEXT                      -- URL webhooka wychodzącego (NULL = wyłączony)
 
 milestones
   id           INTEGER PK AUTOINCREMENT
   target_date  TEXT NOT NULL               -- format: 'YYYY-MM-DD'
   target_value REAL NOT NULL               -- docelowa wartość net worth
   label        TEXT                        -- opcjonalna etykieta
+  notified_at  TEXT                        -- kiedy wysłano webhook milestone_achieved (NULL = jeszcze nie)
   created_at   TEXT DEFAULT datetime('now')
 ```
 
@@ -154,6 +159,8 @@ milestones
 - Konto z wpisami (`entries`) **nie może być usunięte** — tylko zarchiwizowane
 - Usunięcie snapshotu **kasuje kaskadowo** wszystkie jego wpisy
 - Jeden snapshot na datę (constraint UNIQUE na `date`)
+- Nazwy kont są unikalne case-insensitive — wymagane do jednoznacznego dopasowania w `/api/sync`
+- Wszystkie daty walidowane na poziomie API (format `YYYY-MM-DD`)
 
 ---
 
@@ -168,8 +175,8 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 |---|---|---|
 | GET | `/api/accounts` | Lista aktywnych kont |
 | GET | `/api/accounts?include_archived=true` | Lista wszystkich kont |
-| POST | `/api/accounts` | Utwórz konto `{name, type}` |
-| PATCH | `/api/accounts/{id}` | Edytuj konto `{name?, type?, archived?}` |
+| POST | `/api/accounts` | Utwórz konto `{name, type, category?}` |
+| PATCH | `/api/accounts/{id}` | Edytuj konto `{name?, type?, archived?, category?}` |
 | DELETE | `/api/accounts/{id}` | Usuń konto (tylko bez wpisów) |
 
 ### Snapshoty (`/api/snapshots`)
@@ -209,8 +216,8 @@ Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany 
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
-| GET | `/api/settings` | Pobierz ustawienia (m.in. `backup_cron`) |
-| PATCH | `/api/settings` | Zapisz ustawienia `{backup_cron}` i przeplanuj scheduler |
+| GET | `/api/settings` | Pobierz ustawienia (m.in. `backup_cron`, `webhook_url`) |
+| PATCH | `/api/settings` | Zapisz ustawienia `{backup_cron?, webhook_url?}` i przeplanuj scheduler; pusty `webhook_url` wyłącza webhook |
 
 ### Backup — pliki .db
 
@@ -238,6 +245,18 @@ Przykład payloadu:
 ```
 
 Odpowiedź zawiera pola `synced` (udane) i `errors` (nieznane/zarchiwizowane konta). Nazwy kont są dopasowywane case-insensitively.
+
+### Webhook wychodzący
+
+Jeśli w ustawieniach skonfigurowano `webhook_url`, aplikacja wysyła `POST` z JSON-em `{event, timestamp, data}` przy zdarzeniach:
+
+| Event | Kiedy | `data` |
+|---|---|---|
+| `snapshot_created` | utworzenie snapshotu z UI | pełny snapshot z wpisami |
+| `sync_completed` | udany `POST /api/sync` | `{synced, errors}` |
+| `milestone_achieved` | net worth osiągnął `target_value` celu | cel + bieżący `net_worth` |
+
+Każdy cel jest notyfikowany tylko raz (pole `notified_at`). Błędy wysyłki są logowane i nie blokują odpowiedzi API.
 
 ### JSON export / import
 
@@ -330,19 +349,25 @@ Zmienne środowiskowe (ustawiane w `docker-compose.yml`):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "exported_at": "2024-01-15T12:00:00",
   "accounts": [
-    {"id": 1, "name": "mBank", "type": "asset", "archived": 0, "created_at": "..."}
+    {"id": 1, "name": "mBank", "type": "asset", "category": "Gotówka", "archived": 0, "created_at": "..."}
   ],
   "snapshots": [
     {"id": 1, "date": "2024-01-01"}
   ],
   "entries": [
     {"id": 1, "snapshot_id": 1, "account_id": 1, "value": 15000.00}
-  ]
+  ],
+  "milestones": [
+    {"id": 1, "target_date": "2025-12-31", "target_value": 100000.0, "label": "FIRE etap 1", "notified_at": null, "created_at": "..."}
+  ],
+  "settings": {"id": 1, "backup_cron": "0 4 * * *", "milestone_goal": null, "webhook_url": null}
 }
 ```
+
+Import akceptuje też starszy format (`version: 1`) bez `milestones`/`settings`.
 
 ---
 

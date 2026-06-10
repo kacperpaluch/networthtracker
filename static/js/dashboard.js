@@ -292,6 +292,28 @@ window.renderMilestone = function renderMilestone() {
     var dateStr = m.target_date ? window.fmtDate(m.target_date) : '';
     var labelStr = m.label ? window.esc(m.label) : (dateStr || 'Cel');
 
+    // ETA: kiedy cel zostanie osiagniety przy obecnym tempie
+    var etaHtml = '';
+    if (!isReached && s.avg_monthly_change !== undefined) {
+      var gap = m.target_value - nw;
+      var avg = s.avg_monthly_change;
+      if (gap > 0) {
+        if (avg > 0) {
+          var monthsNeeded = gap / avg;
+          if (monthsNeeded <= 600) {
+            var etaDate = new Date();
+            etaDate.setMonth(etaDate.getMonth() + Math.ceil(monthsNeeded));
+            var etaStr = new Intl.DateTimeFormat('pl-PL', { month: 'long', year: 'numeric' }).format(etaDate);
+            etaHtml = '<div class="text-sm text-muted" style="margin-top:2px">przy obecnym tempie: <b>' + etaStr + '</b></div>';
+          } else {
+            etaHtml = '<div class="text-sm text-muted" style="margin-top:2px">przy obecnym tempie: ponad 50 lat</div>';
+          }
+        } else {
+          etaHtml = '<div class="text-sm text-muted" style="margin-top:2px">przy obecnym tempie cel oddala sie</div>';
+        }
+      }
+    }
+
     var daysLeft = '';
     if (m.target_date) {
       var targetD = new Date(m.target_date + 'T00:00:00');
@@ -312,6 +334,7 @@ window.renderMilestone = function renderMilestone() {
         (m.target_date ? '<span class="text-sm text-muted">' + dateStr + '</span>' : '') +
         daysLeft +
       '</div>' +
+      etaHtml +
       '<div class="milestone-bar-wrap" style="margin-top:4px">' +
         '<div class="milestone-bar' + barCls + '" style="width:' + barWidth.toFixed(1) + '%"></div>' +
       '</div>' +

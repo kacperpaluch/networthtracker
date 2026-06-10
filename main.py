@@ -1,17 +1,19 @@
+import json
 import logging
 import os
 import sqlite3
 import tempfile
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, List
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, HTTPException, Query, Request, UploadFile, File
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 import db
 
@@ -55,15 +57,27 @@ app = FastAPI(title="Net Worth Tracker", lifespan=lifespan)
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
+def _validate_iso_date(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return v
+    try:
+        datetime.strptime(v, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        raise ValueError("Data musi mieć format YYYY-MM-DD")
+    return v
+
+
 class AccountCreate(BaseModel):
     name: str
     type: str
+    category: Optional[str] = None
 
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
     type: Optional[str] = None
     archived: Optional[int] = None
+    category: Optional[str] = None
 
 
 class EntryInput(BaseModel):
@@ -75,15 +89,20 @@ class SnapshotCreate(BaseModel):
     date: str
     entries: List[EntryInput]
 
+    _check_date = field_validator("date")(_validate_iso_date)
+
 
 class SnapshotUpdate(BaseModel):
     date: Optional[str] = None
     entries: Optional[List[EntryInput]] = None
 
+    _check_date = field_validator("date")(_validate_iso_date)
+
 
 class SettingsUpdate(BaseModel):
     backup_cron: Optional[str] = None
     milestone_goal: Optional[float] = None
+    webhook_url: Optional[str] = None
 
 
 class SyncEntry(BaseModel):
@@ -91,17 +110,50 @@ class SyncEntry(BaseModel):
     account_name: str
     value: float
 
+    _check_date = field_validator("date")(_validate_iso_date)
+
 
 class MilestoneCreate(BaseModel):
     target_date: str
     target_value: float
     label: Optional[str] = None
 
+    _check_date = field_validator("target_date")(_validate_iso_date)
+
 
 class MilestoneUpdate(BaseModel):
     target_date: Optional[str] = None
     target_value: Optional[float] = None
     label: Optional[str] = None
+
+    _check_date = field_validator("target_date")(_validate_iso_date)
+
+
+# ── Outgoing webhook ──────────────────────────────────────────────────────────
+
+def _post_webhook(url: str, payload: dict):
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=10)
+        logger.info("Webhook '%s' wysłany", payload.get("event"))
+    except Exception as e:
+        logger.error("Błąd wysyłki webhooka '%s': %s", payload.get("event"), e)
+
+
+def _fire_webhooks(background: BackgroundTasks, event: str = None, data: dict = None):
+    """Wysyła event (jeśli podany) oraz powiadomienia o nowo osiągniętych celach."""
+    url = db.get_settings().get("webhook_url")
+    if not url:
+        return
+    ts = datetime.now().isoformat()
+    if event:
+        background.add_task(_post_webhook, url, {"event": event, "timestamp": ts, "data": data})
+    for m in db.pop_newly_achieved_milestones():
+        background.add_task(_post_webhook, url, {"event": "milestone_achieved", "timestamp": ts, "data": m})
 
 
 # ── Milestones ────────────────────────────────────────────────────────────────
@@ -113,10 +165,7 @@ def list_milestones():
 
 @app.post("/api/milestones", status_code=201)
 def add_milestone(body: MilestoneCreate):
-    try:
-        return db.create_milestone(body.target_date, body.target_value, body.label)
-    except Exception as e:
-        raise HTTPException(400, str(e))
+    return db.create_milestone(body.target_date, body.target_value, body.label)
 
 
 @app.patch("/api/milestones/{milestone_id}")
@@ -152,7 +201,11 @@ def update_settings(body: SettingsUpdate, request: Request):
         except ValueError as e:
             raise HTTPException(400, str(e))
         request.app.state.scheduler.reschedule_job("daily_backup", trigger=trigger)
-    saved = db.save_settings(backup_cron=body.backup_cron, milestone_goal=body.milestone_goal)
+    saved = db.save_settings(
+        backup_cron=body.backup_cron,
+        milestone_goal=body.milestone_goal,
+        webhook_url=body.webhook_url,
+    )
     return saved
 
 
@@ -168,15 +221,15 @@ def add_account(body: AccountCreate):
     if body.type not in ("asset", "liability"):
         raise HTTPException(400, "type must be 'asset' or 'liability'")
     try:
-        return db.create_account(body.name, body.type)
-    except Exception as e:
+        return db.create_account(body.name, body.type, body.category)
+    except ValueError as e:
         raise HTTPException(400, str(e))
 
 
 @app.patch("/api/accounts/{account_id}")
 def edit_account(account_id: int, body: AccountUpdate):
     try:
-        return db.update_account(account_id, body.name, body.type, body.archived)
+        return db.update_account(account_id, body.name, body.type, body.archived, body.category)
     except LookupError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
@@ -201,21 +254,25 @@ def list_snapshots():
 
 
 @app.post("/api/snapshots", status_code=201)
-def add_snapshot(body: SnapshotCreate):
+def add_snapshot(body: SnapshotCreate, background: BackgroundTasks):
     try:
-        return db.create_snapshot(body.date, body.entries)
+        snap = db.create_snapshot(body.date, body.entries)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    _fire_webhooks(background, "snapshot_created", snap)
+    return snap
 
 
 @app.patch("/api/snapshots/{snapshot_id}")
-def edit_snapshot(snapshot_id: int, body: SnapshotUpdate):
+def edit_snapshot(snapshot_id: int, body: SnapshotUpdate, background: BackgroundTasks):
     try:
-        return db.update_snapshot(snapshot_id, body.date, body.entries)
+        snap = db.update_snapshot(snapshot_id, body.date, body.entries)
     except LookupError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
+    _fire_webhooks(background)
+    return snap
 
 
 @app.delete("/api/snapshots/{snapshot_id}")
@@ -229,7 +286,7 @@ def remove_snapshot(snapshot_id: int):
 # ── Sync (n8n / automation) ───────────────────────────────────────────────────
 
 @app.post("/api/sync")
-def sync_entries(body: List[SyncEntry]):
+def sync_entries(body: List[SyncEntry], background: BackgroundTasks):
     synced, errors = [], []
     for item in body:
         try:
@@ -237,6 +294,8 @@ def sync_entries(body: List[SyncEntry]):
             synced.append({"date": item.date, "account_name": item.account_name})
         except LookupError as e:
             errors.append({"date": item.date, "account_name": item.account_name, "error": str(e)})
+    if synced:
+        _fire_webhooks(background, "sync_completed", {"synced": synced, "errors": errors})
     return {"synced": synced, "errors": errors}
 
 
@@ -316,17 +375,11 @@ async def restore_from_upload(file: UploadFile = File(...)):
         tmp.write(content)
         tmp_path = tmp.name
     try:
-        src_conn = sqlite3.connect(tmp_path)
-        dst_conn = sqlite3.connect(db.DB_PATH)
-        try:
-            with dst_conn:
-                src_conn.backup(dst_conn)
-        finally:
-            src_conn.close()
-            dst_conn.close()
+        return db.restore_from_file(tmp_path)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     finally:
         os.unlink(tmp_path)
-    return {"ok": True}
 
 
 @app.delete("/api/backup/{filename}")
@@ -355,9 +408,16 @@ def export():
 async def import_(request: Request):
     try:
         data = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Nieprawidłowy JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "Oczekiwano obiektu JSON z danymi eksportu")
+    try:
         return db.import_data(data)
-    except Exception as e:
-        raise HTTPException(400, str(e))
+    except (KeyError, TypeError) as e:
+        raise HTTPException(400, f"Nieprawidłowa struktura danych: {e}")
+    except sqlite3.IntegrityError as e:
+        raise HTTPException(400, f"Dane naruszają więzy integralności: {e}")
 
 
 # ── Frontend ──────────────────────────────────────────────────────────────────

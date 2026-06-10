@@ -41,6 +41,7 @@ def init_db():
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 name       TEXT    NOT NULL,
                 type       TEXT    NOT NULL CHECK(type IN ('asset','liability')),
+                category   TEXT,
                 archived   INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT    NOT NULL DEFAULT (datetime('now'))
             );
@@ -58,7 +59,8 @@ def init_db():
             CREATE TABLE IF NOT EXISTS settings (
                 id             INTEGER PRIMARY KEY CHECK(id = 1),
                 backup_cron    TEXT NOT NULL DEFAULT '0 4 * * *',
-                milestone_goal REAL
+                milestone_goal REAL,
+                webhook_url    TEXT
             );
             INSERT OR IGNORE INTO settings (id, backup_cron) VALUES (1, '0 4 * * *');
             CREATE TABLE IF NOT EXISTS milestones (
@@ -66,13 +68,28 @@ def init_db():
                 target_date  TEXT    NOT NULL,
                 target_value REAL    NOT NULL,
                 label        TEXT,
+                notified_at  TEXT,
                 created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
             );
         """)
-        # Migration: add milestone_goal column if missing
-        cols = [r["name"] for r in conn.execute("PRAGMA table_info(settings)").fetchall()]
-        if "milestone_goal" not in cols:
-            conn.execute("ALTER TABLE settings ADD COLUMN milestone_goal REAL")
+        _migrate_column(conn, "settings",   "milestone_goal", "REAL")
+        _migrate_column(conn, "settings",   "webhook_url",    "TEXT")
+        _migrate_column(conn, "accounts",   "category",       "TEXT")
+        _migrate_column(conn, "milestones", "notified_at",    "TEXT")
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_name_nocase "
+                "ON accounts(name COLLATE NOCASE)"
+            )
+        except sqlite3.IntegrityError:
+            # Existing duplicate names block the index; keep working without it
+            pass
+
+
+def _migrate_column(conn, table: str, column: str, col_type: str):
+    cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
 
 # ── Accounts ──────────────────────────────────────────────────────────────────
@@ -86,13 +103,19 @@ def get_accounts(include_archived: bool = False) -> list:
         return [dict(r) for r in conn.execute(q).fetchall()]
 
 
-def create_account(name: str, type_: str) -> dict:
+def create_account(name: str, type_: str, category: str = None) -> dict:
     with get_db() as conn:
-        cur = conn.execute("INSERT INTO accounts (name, type) VALUES (?, ?)", (name, type_))
+        try:
+            cur = conn.execute(
+                "INSERT INTO accounts (name, type, category) VALUES (?, ?, ?)",
+                (name, type_, category),
+            )
+        except sqlite3.IntegrityError:
+            raise ValueError(f"Konto o nazwie '{name}' już istnieje")
         return dict(conn.execute("SELECT * FROM accounts WHERE id = ?", (cur.lastrowid,)).fetchone())
 
 
-def update_account(account_id: int, name=None, type_=None, archived=None) -> dict:
+def update_account(account_id: int, name=None, type_=None, archived=None, category=None) -> dict:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
         if not row:
@@ -106,8 +129,13 @@ def update_account(account_id: int, name=None, type_=None, archived=None) -> dic
             updates.append("type = ?"); vals.append(type_)
         if archived is not None:
             updates.append("archived = ?"); vals.append(int(archived))
+        if category is not None:
+            updates.append("category = ?"); vals.append(category or None)
         if updates:
-            conn.execute(f"UPDATE accounts SET {', '.join(updates)} WHERE id = ?", vals + [account_id])
+            try:
+                conn.execute(f"UPDATE accounts SET {', '.join(updates)} WHERE id = ?", vals + [account_id])
+            except sqlite3.IntegrityError:
+                raise ValueError(f"Konto o nazwie '{name}' już istnieje")
         return dict(conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone())
 
 
@@ -146,8 +174,27 @@ def _snapshot_with_entries(conn, snapshot_id: int) -> dict:
 
 def get_snapshots() -> list:
     with get_db() as conn:
-        ids = [r["id"] for r in conn.execute("SELECT id FROM snapshots ORDER BY date DESC").fetchall()]
-        return [_snapshot_with_entries(conn, i) for i in ids]
+        snaps = [dict(r) for r in conn.execute("SELECT * FROM snapshots ORDER BY date DESC").fetchall()]
+        rows = conn.execute("""
+            SELECT e.id, e.snapshot_id, e.account_id, e.value,
+                   a.name AS account_name, a.type AS account_type
+            FROM entries e JOIN accounts a ON a.id = e.account_id
+            ORDER BY a.type, a.name
+        """).fetchall()
+        by_snapshot = {}
+        for r in rows:
+            by_snapshot.setdefault(r["snapshot_id"], []).append(dict(r))
+        for s in snaps:
+            entries = by_snapshot.get(s["id"], [])
+            for e in entries:
+                e.pop("snapshot_id", None)
+            assets = sum(e["value"] for e in entries if e["account_type"] == "asset")
+            liabs  = sum(e["value"] for e in entries if e["account_type"] == "liability")
+            s["entries"] = entries
+            s["total_assets"] = assets
+            s["total_liabilities"] = liabs
+            s["net_worth"] = assets - liabs
+        return snaps
 
 
 def create_snapshot(date: str, entries) -> dict:
@@ -277,7 +324,7 @@ def get_stats_summary() -> dict:
             "SELECT id FROM snapshots WHERE date = ?", (latest["date"],)
         ).fetchone()["id"]
         rows = conn.execute("""
-            SELECT a.name, a.type, e.value
+            SELECT a.name, a.type, a.category, e.value
             FROM entries e JOIN accounts a ON a.id = e.account_id
             WHERE e.snapshot_id = ? ORDER BY a.type, e.value DESC
         """, (snap_id,)).fetchall()
@@ -285,10 +332,11 @@ def get_stats_summary() -> dict:
         total_liabs  = sum(r["value"] for r in rows if r["type"] == "liability")
         result["asset_structure"] = [
             {
-                "name":  r["name"],
-                "type":  r["type"],
-                "value": r["value"],
-                "pct":   (r["value"] / total_assets * 100) if r["type"] == "asset" and total_assets else None,
+                "name":     r["name"],
+                "type":     r["type"],
+                "category": r["category"],
+                "value":    r["value"],
+                "pct":      (r["value"] / total_assets * 100) if r["type"] == "asset" and total_assets else None,
             }
             for r in rows
         ]
@@ -501,6 +549,27 @@ def update_milestone(
         )
 
 
+def pop_newly_achieved_milestones() -> list:
+    """Zwraca cele osiągnięte przez bieżący net worth, które nie były jeszcze
+    notyfikowane, i oznacza je jako notyfikowane."""
+    series = get_networth_series()
+    if not series:
+        return []
+    nw = series[-1]["net_worth"]
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM milestones WHERE notified_at IS NULL AND target_value <= ?",
+            (nw,),
+        ).fetchall()
+        achieved = [dict(r) for r in rows]
+        now = datetime.now().isoformat()
+        for m in achieved:
+            conn.execute("UPDATE milestones SET notified_at = ? WHERE id = ?", (now, m["id"]))
+            m["notified_at"] = now
+            m["net_worth"] = nw
+    return achieved
+
+
 def delete_milestone(milestone_id: int) -> dict:
     with get_db() as conn:
         if not conn.execute(
@@ -519,7 +588,7 @@ def get_settings() -> dict:
         return dict(row) if row else {"id": 1, "backup_cron": "0 4 * * *", "milestone_goal": None}
 
 
-def save_settings(backup_cron: str = None, milestone_goal: float = None) -> dict:
+def save_settings(backup_cron: str = None, milestone_goal: float = None, webhook_url: str = None) -> dict:
     with get_db() as conn:
         if backup_cron is not None:
             conn.execute(
@@ -530,6 +599,12 @@ def save_settings(backup_cron: str = None, milestone_goal: float = None) -> dict
             conn.execute(
                 "UPDATE settings SET milestone_goal = ? WHERE id = 1",
                 (milestone_goal,),
+            )
+        if webhook_url is not None:
+            # Pusty string wyłącza webhook
+            conn.execute(
+                "UPDATE settings SET webhook_url = ? WHERE id = 1",
+                (webhook_url.strip() or None,),
             )
     return get_settings()
 
@@ -551,10 +626,14 @@ def list_backups() -> list:
     return sorted(files, key=lambda x: x["created_at"], reverse=True)
 
 
-def create_backup() -> dict:
+def create_backup(prune: bool = True) -> dict:
     os.makedirs(BACKUP_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     dst = os.path.join(BACKUP_DIR, f"networth_{timestamp}.db")
+    n = 1
+    while os.path.exists(dst):
+        dst = os.path.join(BACKUP_DIR, f"networth_{timestamp}_{n}.db")
+        n += 1
     src_conn = sqlite3.connect(DB_PATH)
     dst_conn = sqlite3.connect(dst)
     try:
@@ -563,15 +642,56 @@ def create_backup() -> dict:
     finally:
         src_conn.close()
         dst_conn.close()
-    # Prune old backups
-    backups = list_backups()
-    while len(backups) > BACKUP_KEEP:
-        oldest = backups.pop()
-        try:
-            os.remove(os.path.join(BACKUP_DIR, oldest["filename"]))
-        except OSError:
-            pass
+    if prune:
+        backups = list_backups()
+        while len(backups) > BACKUP_KEEP:
+            oldest = backups.pop()
+            try:
+                os.remove(os.path.join(BACKUP_DIR, oldest["filename"]))
+            except OSError:
+                pass
     return {"filename": os.path.basename(dst)}
+
+
+REQUIRED_TABLES = {"accounts", "snapshots", "entries"}
+
+
+def validate_backup_file(path: str):
+    """Sprawdza, czy plik to poprawna baza SQLite ze schematem aplikacji."""
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            check = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            if check != "ok":
+                raise ValueError(f"Baza uszkodzona (integrity_check: {check})")
+            tables = {
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        raise ValueError("Plik nie jest poprawną bazą SQLite")
+    missing = REQUIRED_TABLES - tables
+    if missing:
+        raise ValueError(f"Baza nie zawiera wymaganych tabel: {', '.join(sorted(missing))}")
+
+
+def restore_from_file(src_path: str) -> dict:
+    """Waliduje plik, robi backup bieżącej bazy i nadpisuje ją zawartością pliku."""
+    validate_backup_file(src_path)
+    safety = create_backup(prune=False) if os.path.exists(DB_PATH) else None
+    src_conn = sqlite3.connect(src_path)
+    dst_conn = sqlite3.connect(DB_PATH)
+    try:
+        with dst_conn:
+            src_conn.backup(dst_conn)
+    finally:
+        src_conn.close()
+        dst_conn.close()
+    init_db()  # dograj brakujące tabele/kolumny, jeśli backup jest ze starszej wersji
+    return {"ok": True, "pre_restore_backup": safety["filename"] if safety else None}
 
 
 def restore_backup(filename: str) -> dict:
@@ -580,15 +700,7 @@ def restore_backup(filename: str) -> dict:
     src = os.path.join(BACKUP_DIR, filename)
     if not os.path.exists(src):
         raise LookupError("Backup nie istnieje")
-    src_conn = sqlite3.connect(src)
-    dst_conn = sqlite3.connect(DB_PATH)
-    try:
-        with dst_conn:
-            src_conn.backup(dst_conn)
-    finally:
-        src_conn.close()
-        dst_conn.close()
-    return {"ok": True}
+    return restore_from_file(src)
 
 
 def delete_backup(filename: str) -> dict:
@@ -642,12 +754,15 @@ def sync_entry(date: str, account_name: str, value: float) -> dict:
 
 def export_data() -> dict:
     with get_db() as conn:
+        settings = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone()
         return {
-            "version":     1,
+            "version":     2,
             "exported_at": datetime.now().isoformat(),
-            "accounts":  [dict(r) for r in conn.execute("SELECT * FROM accounts").fetchall()],
-            "snapshots": [dict(r) for r in conn.execute("SELECT * FROM snapshots").fetchall()],
-            "entries":   [dict(r) for r in conn.execute("SELECT * FROM entries").fetchall()],
+            "accounts":   [dict(r) for r in conn.execute("SELECT * FROM accounts").fetchall()],
+            "snapshots":  [dict(r) for r in conn.execute("SELECT * FROM snapshots").fetchall()],
+            "entries":    [dict(r) for r in conn.execute("SELECT * FROM entries").fetchall()],
+            "milestones": [dict(r) for r in conn.execute("SELECT * FROM milestones").fetchall()],
+            "settings":   dict(settings) if settings else None,
         }
 
 
@@ -656,10 +771,11 @@ def import_data(data: dict) -> dict:
         conn.execute("DELETE FROM entries")
         conn.execute("DELETE FROM snapshots")
         conn.execute("DELETE FROM accounts")
+        conn.execute("DELETE FROM milestones")
         for a in data.get("accounts", []):
             conn.execute(
-                "INSERT INTO accounts (id,name,type,archived,created_at) VALUES (?,?,?,?,?)",
-                (a["id"], a["name"], a["type"], a["archived"],
+                "INSERT INTO accounts (id,name,type,category,archived,created_at) VALUES (?,?,?,?,?,?)",
+                (a["id"], a["name"], a["type"], a.get("category"), a["archived"],
                  a.get("created_at", datetime.now().isoformat()))
             )
         for s in data.get("snapshots", []):
@@ -669,8 +785,23 @@ def import_data(data: dict) -> dict:
                 "INSERT INTO entries (id,snapshot_id,account_id,value) VALUES (?,?,?,?)",
                 (e["id"], e["snapshot_id"], e["account_id"], e["value"])
             )
+        for m in data.get("milestones", []):
+            conn.execute(
+                "INSERT INTO milestones (id,target_date,target_value,label,notified_at,created_at) VALUES (?,?,?,?,?,?)",
+                (m["id"], m["target_date"], m["target_value"], m.get("label"),
+                 m.get("notified_at"), m.get("created_at", datetime.now().isoformat()))
+            )
+        settings = data.get("settings")
+        if settings:
+            conn.execute(
+                "UPDATE settings SET backup_cron = ?, milestone_goal = ?, webhook_url = ? WHERE id = 1",
+                (settings.get("backup_cron", "0 4 * * *"),
+                 settings.get("milestone_goal"),
+                 settings.get("webhook_url")),
+            )
     return {"ok": True, "imported": {
-        "accounts":  len(data.get("accounts",  [])),
-        "snapshots": len(data.get("snapshots", [])),
-        "entries":   len(data.get("entries",   [])),
+        "accounts":   len(data.get("accounts",   [])),
+        "snapshots":  len(data.get("snapshots",  [])),
+        "entries":    len(data.get("entries",    [])),
+        "milestones": len(data.get("milestones", [])),
     }}
