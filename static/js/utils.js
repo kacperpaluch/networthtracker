@@ -1,6 +1,5 @@
 (function() {
 
-// API helpers
 window.api = async function api(method, url, body) {
   const opts = { method, headers: {'Content-Type':'application/json'} };
   if (body !== undefined) opts.body = JSON.stringify(body);
@@ -16,7 +15,6 @@ window.POST   = (url, b) => window.api('POST',   url, b);
 window.PATCH  = (url, b) => window.api('PATCH',  url, b);
 window.DELETE = url       => window.api('DELETE', url);
 
-// Formatting
 window.fmtCurrency = function fmtCurrency(v) {
   if (v === null || v === undefined) return '\u2014';
   return new Intl.NumberFormat('pl-PL', {
@@ -43,23 +41,31 @@ window.changeHtml = function changeHtml(amount, pct, showArrow) {
   if (pct !== null && pct !== undefined) txt += ' (' + Math.abs(pct).toFixed(1) + '%)';
   return '<span class="' + cls + '">' + txt + '</span>';
 };
+window.changePillHtml = function changePillHtml(amount, pct, showArrow) {
+  if (amount === undefined || amount === null) return '';
+  const pos = amount >= 0;
+  const cls = pos ? 'pos' : 'neg';
+  const arrow = showArrow !== false ? (pos ? '\u25B2' : '\u25BC') : '';
+  let txt = arrow ? ' ' + arrow + ' ' : '';
+  txt += window.fmtCurrency(Math.abs(amount));
+  if (pct !== null && pct !== undefined) txt += ' (' + Math.abs(pct).toFixed(1) + '%)';
+  return '<span class="delta-pill ' + cls + '">' + txt + '</span>';
+};
 
-// Modal helpers
 window.openModal = function openModal(id) {
   document.getElementById(id).classList.add('open');
   document.body.style.overflow = 'hidden';
+  window.refreshIcons && window.refreshIcons();
 };
 window.closeModal = function closeModal(id) {
   document.getElementById(id).classList.remove('open');
   document.body.style.overflow = '';
 };
 
-// Utility
 window.esc = function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 };
 
-// Escape key handler
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-overlay.open').forEach(function(m) {

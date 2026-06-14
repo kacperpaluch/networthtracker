@@ -6,34 +6,35 @@
 <title>Net Worth Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </head>
 <body>
 
-<nav>
+<nav id="main-nav">
   <span class="nav-logo">
-    <span class="nav-logo-icon">
-      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 2a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5zm1 1h11v2.5l-2.5 2.5L9 6l-3 3-2.5-1.5V3zm0 5.5 2.5 1.5 3-3 2 2 2.5-2.5V13h-10z"/></svg>
+    <span class="nav-logo-mark">
+      <i data-lucide="line-chart"></i>
     </span>
     Net<span>Worth</span>
   </span>
   <div class="nav-tabs">
-    <button class="nav-tab active" onclick="switchTab('dashboard')">Dashboard</button>
-    <button class="nav-tab" onclick="switchTab('history')">Historia</button>
-    <button class="nav-tab" onclick="switchTab('accounts')">Konta</button>
-    <button class="nav-tab" onclick="switchTab('backup')">Backup</button>
+    <button class="nav-tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
+    <button class="nav-tab" data-tab="history" onclick="switchTab('history')">Historia</button>
+    <button class="nav-tab" data-tab="accounts" onclick="switchTab('accounts')">Konta</button>
+    <button class="nav-tab" data-tab="backup" onclick="switchTab('backup')">Backup</button>
   </div>
   <div class="nav-actions">
     <button class="btn btn-ghost btn-sm" onclick="exportData()" title="Eksportuj dane">
-      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.97a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.779a.749.749 0 1 1 1.06-1.06l1.97 1.97Z"/></svg>
-      Eksport
+      <i data-lucide="download" class="icon-sm"></i>
+      <span>Eksport</span>
     </button>
     <label class="btn btn-ghost btn-sm" style="cursor:pointer" title="Importuj dane">
-      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 2.311v5.689l-1.97-1.97a.749.749 0 1 0-1.06 1.06l3.25 3.25a.749.749 0 0 0 1.06 0l3.25-3.25a.749.749 0 1 0-1.06-1.06L8.75 8V2.311a.75.75 0 0 0-1.5 0Z"/></svg>
-      Import
+      <i data-lucide="upload" class="icon-sm"></i>
+      <span>Import</span>
       <input type="file" accept=".json" style="display:none" onchange="importData(event)">
     </label>
   </div>
@@ -45,12 +46,18 @@
 <div id="tab-dashboard" class="tab-panel active">
 
   <div id="empty-state" class="empty-state" style="display:none">
-    <div class="empty-icon">&#x1F4CA;</div>
-    <h2 class="empty-title">Zacznij &#x15B;ledzi&#x107; sw&#xF3;j maj&#x105;tek</h2>
+    <div class="empty-icon">
+      <i data-lucide="bar-chart-3"></i>
+    </div>
+    <h2 class="empty-title">Zacznij śledzić swój majątek</h2>
     <p class="empty-desc">Dodaj swoje konta (bankowe, inwestycyjne, kredyty), a potem zapisz pierwszy snapshot z aktualnymi saldami.</p>
     <div class="empty-actions">
-      <button class="btn btn-primary" onclick="switchTab('accounts');openAccountModal()">Dodaj pierwsze konto</button>
-      <button class="btn btn-secondary" id="empty-snapshot-btn" style="display:none" onclick="openSnapshotModal()">Dodaj snapshot</button>
+      <button class="btn btn-primary" onclick="switchTab('accounts');openAccountModal()">
+        <i data-lucide="plus" class="icon-sm"></i> Dodaj pierwsze konto
+      </button>
+      <button class="btn btn-secondary" id="empty-snapshot-btn" style="display:none" onclick="openSnapshotModal()">
+        <i data-lucide="camera" class="icon-sm"></i> Dodaj snapshot
+      </button>
     </div>
   </div>
 
@@ -58,21 +65,25 @@
     <!-- Summary cards -->
     <div class="summary-cards" id="summary-cards">
       <div class="card summary-card card-nw">
-        <div class="card-label">Warto&#x15B;&#x107; netto</div>
+        <div class="card-icon"><i data-lucide="trending-up"></i></div>
+        <div class="card-label">Wartość netto</div>
         <div class="card-value mono" id="card-nw">&mdash;</div>
         <div class="card-sub" id="card-nw-change"></div>
       </div>
-      <div class="card summary-card">
+      <div class="card summary-card card-assets">
+        <div class="card-icon"><i data-lucide="wallet"></i></div>
         <div class="card-label">Aktywa</div>
         <div class="card-value mono" id="card-assets">&mdash;</div>
         <div class="card-sub text-muted" id="card-assets-sub"></div>
       </div>
-      <div class="card summary-card">
-        <div class="card-label">Zobowi&#x105;zania</div>
+      <div class="card summary-card card-liabs">
+        <div class="card-icon"><i data-lucide="credit-card"></i></div>
+        <div class="card-label">Zobowiązania</div>
         <div class="card-value mono" id="card-liabs">&mdash;</div>
         <div class="card-sub" id="card-liabs-ratio"></div>
       </div>
-      <div class="card summary-card">
+      <div class="card summary-card card-ytd">
+        <div class="card-icon"><i data-lucide="calendar"></i></div>
         <div class="card-label">Zmiana YTD</div>
         <div class="card-value mono" id="card-ytd">&mdash;</div>
         <div class="card-sub" id="card-ytd-sub"></div>
@@ -81,8 +92,14 @@
 
     <!-- Net worth chart -->
     <div class="card chart-card">
-      <div class="chart-header">
-        <h3 class="section-title" style="margin-bottom:0">Warto&#x15B;&#x107; netto w czasie</h3>
+      <div class="card-header">
+        <div>
+          <div class="card-title">Wartość netto w czasie</div>
+          <div class="card-subtitle">Historia snapshotów z prognozą i średnią kroczącą</div>
+        </div>
+        <button class="btn btn-dark btn-sm" onclick="openSnapshotModal()">
+          <i data-lucide="plus" class="icon-sm"></i> Nowy snapshot
+        </button>
       </div>
       <div class="chart-wrap"><canvas id="chart-nw"></canvas></div>
     </div>
@@ -90,58 +107,68 @@
     <!-- Monthly changes + Donut allocation -->
     <div class="grid-2">
       <div class="card chart-card">
-        <div class="chart-header">
-          <h3 class="section-title" style="margin-bottom:0">Miesi&#x119;czne zmiany net worth</h3>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Miesięczne zmiany</div>
+            <div class="card-subtitle">Dynamika wartości netto</div>
+          </div>
         </div>
         <div class="chart-wrap"><canvas id="chart-monthly"></canvas></div>
       </div>
       <div class="card chart-card">
-        <div class="chart-header">
-          <h3 class="section-title" style="margin-bottom:0">Alokacja aktyw&#xF3;w</h3>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Alokacja aktywów</div>
+            <div class="card-subtitle">Struktura portfela wg kategorii</div>
+          </div>
         </div>
         <div class="chart-wrap"><canvas id="chart-donut"></canvas></div>
       </div>
     </div>
 
-    <!-- Bottom grid: breakdown + compare + structure -->
+    <!-- Bottom grid: breakdown + compare -->
     <div class="grid-2">
-      <!-- Stacked breakdown chart -->
       <div class="card chart-card">
-        <div class="chart-header">
-          <h3 class="section-title" style="margin-bottom:0">Rozbicie na konta</h3>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Rozbicie na konta</div>
+            <div class="card-subtitle">Skład aktywów i zobowiązań w czasie</div>
+          </div>
         </div>
         <div class="chart-wrap"><canvas id="chart-breakdown"></canvas></div>
       </div>
 
-      <!-- Period compare -->
       <div class="card">
-        <div style="margin-bottom:14px">
-          <h3 class="section-title">Por&#xF3;wnanie okres&#xF3;w</h3>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Porównanie okresów</div>
+            <div class="card-subtitle">Zmiana wartości netto między datami</div>
+          </div>
         </div>
         <div class="compare-presets" style="margin-bottom:12px">
-          <button class="btn btn-ghost btn-sm" onclick="comparePreset(30)">Miesi&#x105;c</button>
-          <button class="btn btn-ghost btn-sm" onclick="comparePreset(90)">Kwarta&#x142;</button>
+          <button class="btn btn-ghost btn-sm" onclick="comparePreset(30)">Miesiąc</button>
+          <button class="btn btn-ghost btn-sm" onclick="comparePreset(90)">Kwartał</button>
           <button class="btn btn-ghost btn-sm" onclick="comparePreset(365)">Rok</button>
         </div>
         <div class="compare-controls">
           <select class="form-select" id="compare-from" style="flex:1"></select>
           <span class="text-muted">&rarr;</span>
           <select class="form-select" id="compare-to" style="flex:1"></select>
-          <button class="btn btn-secondary btn-sm" onclick="runCompare()">Por&#xF3;wnaj</button>
+          <button class="btn btn-secondary btn-sm" onclick="runCompare()">Porównaj</button>
         </div>
         <div id="compare-result" class="compare-result"></div>
       </div>
     </div>
 
-    <!-- Trend pills + asset structure + milestone -->
+    <!-- Trend pills + milestone + structure -->
     <div class="grid-3">
       <div class="card">
-        <h3 class="section-title">Trendy</h3>
+        <div class="section-title">Trendy</div>
         <div class="stat-pills" id="trend-pills"></div>
       </div>
       <div class="card" id="milestone-widget"></div>
       <div class="card">
-        <h3 class="section-title">Struktura maj&#x105;tku</h3>
+        <div class="section-title">Struktura majątku</div>
         <div id="asset-structure"></div>
       </div>
     </div>
@@ -151,25 +178,27 @@
 <!-- Historia tab -->
 <div id="tab-history" class="tab-panel">
   <div class="page-header">
-    <h2>Historia snapshot&#xF3;w</h2>
+    <div>
+      <h2>Historia snapshotów</h2>
+      <p>Wszystkie wyceny Twojego majątku w jednym miejscu</p>
+    </div>
     <div class="page-header-actions">
       <button class="btn btn-primary" onclick="openSnapshotModal()">
-        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/></svg>
-        Nowy snapshot
+        <i data-lucide="plus" class="icon-sm"></i> Nowy snapshot
       </button>
     </div>
   </div>
   <div class="card" style="padding:0">
-    <div class="table-wrap">
+    <div class="table-wrap" style="border:none">
       <table id="history-table">
         <thead>
           <tr>
             <th style="width:32px"></th>
-            <th style="width:70px">Trend</th>
+            <th style="width:90px">Trend</th>
             <th>Data</th>
-            <th>Warto&#x15B;&#x107; netto</th>
+            <th>Wartość netto</th>
             <th>Aktywa</th>
-            <th>Zobowi&#x105;zania</th>
+            <th>Zobowiązania</th>
             <th style="text-align:right">Akcje</th>
           </tr>
         </thead>
@@ -182,15 +211,17 @@
 <!-- Konta tab -->
 <div id="tab-accounts" class="tab-panel">
   <div class="page-header">
-    <h2>Zarz&#x105;dzanie kontami</h2>
+    <div>
+      <h2>Zarządzanie kontami</h2>
+      <p>Dodawaj konta bankowe, inwestycyjne, kredyty i śledź ich wartość</p>
+    </div>
     <div class="page-header-actions">
       <label class="toggle-row">
         <input type="checkbox" id="show-archived" onchange="renderAccounts()">
-        Poka&#x17C; zarchiwizowane
+        Pokaż zarchiwizowane
       </label>
       <button class="btn btn-primary" onclick="openAccountModal()">
-        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/></svg>
-        Nowe konto
+        <i data-lucide="plus" class="icon-sm"></i> Nowe konto
       </button>
     </div>
   </div>
@@ -202,24 +233,31 @@
 <!-- Backup tab -->
 <div id="tab-backup" class="tab-panel">
   <div class="page-header">
-    <h2>Backup bazy danych</h2>
-    <div class="page-header-actions">
-      <button class="btn btn-primary" onclick="createBackup()">
-        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.97a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.779a.749.749 0 1 1 1.06-1.06l1.97 1.97Z"/></svg>
-        Utw&#xF3;rz backup
-      </button>
-      <label class="btn btn-secondary" style="cursor:pointer" title="Przywr&#xF3;&#x107; z pliku .db pobranego na dysk">
-        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 2.311v5.689l-1.97-1.97a.749.749 0 1 0-1.06 1.06l3.25 3.25a.749.749 0 0 0 1.06 0l3.25-3.25a.749.749 0 1 0-1.06-1.06L8.75 8V2.311a.75.75 0 0 0-1.5 0Z"/></svg>
-        Wczytaj plik .db
-        <input type="file" accept=".db" style="display:none" onchange="restoreFromUpload(event)">
-      </label>
+    <div>
+      <h2>Backup bazy danych</h2>
+      <p>Twórz kopie zapasowe, przywracaj i zarządzaj automatyzacją</p>
     </div>
   </div>
 
-  <div id="backup-msg" style="display:none; padding:10px 16px; border-radius:var(--radius-sm); font-size:.875rem; margin-bottom:4px;"></div>
+  <div id="backup-msg" class="backup-msg"></div>
 
   <div class="card" style="padding:0">
-    <div class="table-wrap">
+    <div class="card-header" style="padding:20px 24px 16px;margin-bottom:0;border-bottom:1px solid var(--border)">
+      <div>
+        <div class="card-title">Kopie zapasowe</div>
+        <div class="card-subtitle">Lista ostatnich 30 backupów automatycznych i ręcznych</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="createBackup()">
+          <i data-lucide="plus" class="icon-sm"></i> Utwórz backup
+        </button>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer">
+          <i data-lucide="upload" class="icon-sm"></i> Wczytaj .db
+          <input type="file" accept=".db" style="display:none" onchange="restoreFromUpload(event)">
+        </label>
+      </div>
+    </div>
+    <div class="table-wrap" style="border:none;border-radius:0">
       <table id="backup-table">
         <thead>
           <tr>
@@ -232,29 +270,31 @@
         <tbody id="backup-tbody"></tbody>
       </table>
     </div>
-    <div id="backup-empty" style="display:none; padding:40px 24px; text-align:center; color:var(--text-muted); font-size:.875rem;">
-      Brak backup&#xF3;w. Kliknij &bdquo;Utw&#xF3;rz backup&rdquo; aby zapisa&#x107; pierwszy.
+    <div id="backup-empty" style="display:none; padding:48px 24px; text-align:center; color:var(--text-muted); font-size:0.875rem;">
+      Brak backupów. Kliknij „Utwórz backup" aby zapisać pierwszy.
     </div>
   </div>
 
-  <div class="card" style="margin-top:16px; padding:16px 20px;">
-    <h3 class="section-title" style="margin-bottom:12px">Harmonogram automatycznego backupu</h3>
-    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-      <input id="cron-input" type="text" placeholder="0 4 * * *" style="font-family:'JetBrains Mono',monospace; padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:rgba(0,0,0,.3); color:var(--text); font-size:.875rem; flex:1; min-width:140px;" />
-      <button class="btn btn-primary" onclick="saveCron()" style="white-space:nowrap;">Zapisz harmonogram</button>
+  <div class="grid-2">
+    <div class="settings-card">
+      <div class="settings-card-title">Harmonogram automatycznego backupu</div>
+      <div class="settings-card-desc">Cykliczne tworzenie kopii zapasowej według wyrażenia cron (5 pól: minuta godzina dzień miesiąc dzień_tygodnia).</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input id="cron-input" type="text" placeholder="0 4 * * *" class="form-input" style="font-family:'JetBrains Mono',monospace; flex:1; min-width:140px;" />
+        <button class="btn btn-dark btn-sm" onclick="saveCron()">Zapisz</button>
+      </div>
+      <p id="cron-msg" class="form-hint" style="display:none; margin-top:10px;"></p>
     </div>
-    <p id="cron-msg" style="display:none; font-size:.8125rem; margin-top:8px;"></p>
-    <p style="font-size:.8125rem; color:var(--text-muted); margin-top:8px;">Format cron: minuta godzina dzie&#x144; miesi&#x105;c dzie&#x144;_tygodnia. Przechowywanych jest ostatnie 30&nbsp;kopii.</p>
-  </div>
 
-  <div class="card" style="margin-top:16px; padding:16px 20px;">
-    <h3 class="section-title" style="margin-bottom:12px">Webhook wychodz&#x105;cy (n8n itp.)</h3>
-    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-      <input id="webhook-input" type="url" placeholder="https://n8n.example.com/webhook/..." style="font-family:'JetBrains Mono',monospace; padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:rgba(0,0,0,.3); color:var(--text); font-size:.875rem; flex:1; min-width:240px;" />
-      <button class="btn btn-primary" onclick="saveWebhook()" style="white-space:nowrap;">Zapisz webhook</button>
+    <div class="settings-card">
+      <div class="settings-card-title">Webhook wychodzący</div>
+      <div class="settings-card-desc">Wysyła JSON na podany URL przy zdarzeniach: <span class="code-inline">snapshot_created</span>, <span class="code-inline">sync_completed</span>, <span class="code-inline">milestone_achieved</span>. Pozostaw puste, aby wyłączyć.</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input id="webhook-input" type="url" placeholder="https://n8n.example.com/webhook/..." class="form-input" style="font-family:'JetBrains Mono',monospace; flex:1; min-width:240px;" />
+        <button class="btn btn-dark btn-sm" onclick="saveWebhook()">Zapisz</button>
+      </div>
+      <p id="webhook-msg" class="form-hint" style="display:none; margin-top:10px;"></p>
     </div>
-    <p id="webhook-msg" style="display:none; font-size:.8125rem; margin-top:8px;"></p>
-    <p style="font-size:.8125rem; color:var(--text-muted); margin-top:8px;">POST JSON wysy&#x142;any przy zdarzeniach: <code>snapshot_created</code>, <code>sync_completed</code>, <code>milestone_achieved</code>. Pozostaw puste, aby wy&#x142;&#x105;czy&#x107;.</p>
   </div>
 </div>
 
@@ -266,7 +306,7 @@
     <div class="modal-header">
       <h2 class="modal-title" id="snapshot-modal-title">Nowy snapshot</h2>
       <button class="modal-close" onclick="closeModal('modal-snapshot-overlay')">
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.06 1.06L9.06 8l3.22 3.22a.749.749 0 0 1-1.06 1.06L8 9.06l-3.22 3.22a.749.749 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
+        <i data-lucide="x" class="icon-md"></i>
       </button>
     </div>
     <div class="modal-body">
@@ -285,11 +325,11 @@
 
 <!-- Modal: Account -->
 <div class="modal-overlay" id="modal-account-overlay" onclick="if(event.target===this)closeModal('modal-account-overlay')">
-  <div class="modal" style="max-width:420px">
+  <div class="modal" style="max-width:440px">
     <div class="modal-header">
       <h2 class="modal-title" id="account-modal-title">Nowe konto</h2>
       <button class="modal-close" onclick="closeModal('modal-account-overlay')">
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.06 1.06L9.06 8l3.22 3.22a.749.749 0 0 1-1.06 1.06L8 9.06l-3.22 3.22a.749.749 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
+        <i data-lucide="x" class="icon-md"></i>
       </button>
     </div>
     <div class="modal-body">
@@ -302,19 +342,19 @@
         <label class="form-label">Typ</label>
         <select class="form-select" id="account-type">
           <option value="asset">Aktywo</option>
-          <option value="liability">Zobowi&#x105;zanie</option>
+          <option value="liability">Zobowiązanie</option>
         </select>
       </div>
       <div class="form-group">
         <label class="form-label">Kategoria (opcjonalnie)</label>
-        <input type="text" class="form-input" id="account-category" list="category-suggestions" placeholder="np. Got&#xF3;wka, ETF, Emerytura">
+        <input type="text" class="form-input" id="account-category" list="category-suggestions" placeholder="np. Gotówka, ETF, Emerytura">
         <datalist id="category-suggestions">
-          <option value="Got&#xF3;wka"></option>
+          <option value="Gotówka"></option>
           <option value="Lokaty"></option>
           <option value="ETF / Akcje"></option>
           <option value="Obligacje"></option>
           <option value="Emerytura"></option>
-          <option value="Nieruchomo&#x15B;ci"></option>
+          <option value="Nieruchomości"></option>
           <option value="Krypto"></option>
           <option value="Kredyty"></option>
           <option value="Inne"></option>
@@ -335,6 +375,10 @@
 <script src="/static/js/accounts.js"></script>
 <script src="/static/js/backup.js"></script>
 <script src="/static/js/app.js"></script>
+<script>
+  // Init Lucide icons after page load
+  if (window.lucide) lucide.createIcons();
+</script>
 
 </body>
 </html>

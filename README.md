@@ -26,7 +26,7 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 - **Eksport / Import** danych w formacie JSON (pełna baza: konta, snapshoty, wpisy, cele, ustawienia)
 - **Sync API** (`POST /api/sync`) — endpoint do automatycznej aktualizacji stanów kont z zewnętrznych źródeł (np. n8n); przyjmuje tablicę `[{date, account_name, value}]`, tworzy lub aktualizuje snapshot
 - **Webhook wychodzący** — opcjonalny URL (zakładka Backup), na który aplikacja wysyła POST JSON przy zdarzeniach: `snapshot_created`, `sync_completed`, `milestone_achieved` (każdy cel notyfikowany jednokrotnie)
-- Responsywny ciemny motyw (dark mode)
+- Nowoczesny, jasny motyw w stylu SaaS (białe tło, akcent zielony `#5EA832`, nagłówki Playfair Display, treść Inter)
 
 ---
 
@@ -49,9 +49,10 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 | Vanilla JavaScript (ES2020+) | lokalne | Logika UI, obsługa API |
 | Chart.js | 4.4.0 (CDN) | Wykresy |
 | chartjs-adapter-date-fns | 3.0.0 (CDN) | Oś czasu w wykresach |
-| Space Grotesk | Google Fonts | Czcionka nagłówków |
-| Plus Jakarta Sans | Google Fonts | Czcionka tekstu |
+| Playfair Display | Google Fonts | Czcionka nagłówków (serif) |
+| Inter | Google Fonts | Czcionka tekstu i UI (sans-serif) |
 | JetBrains Mono | Google Fonts | Czcionka wartości liczbowych |
+| Lucide Icons | CDN (unpkg) | Ikony UI (stroke 2px) |
 
 ### Infrastruktura
 | Technologia | Rola |
@@ -274,20 +275,23 @@ Każdy cel jest notyfikowany tylko raz (pole `notified_at`). Błędy wysyłki s�
 Obraz dostępny na Docker Hub: **[kpa90/networthtracker](https://hub.docker.com/r/kpa90/networthtracker)**  
 Platforma: `linux/amd64` + `linux/arm64` (Raspberry Pi, Orange Pi itp.)
 
-Skopiuj poniższy `docker-compose.yml`, dostosuj port i ścieżkę danych, a następnie uruchom:
+Skopiuj poniższy `docker-compose.yml` i uruchom:
 
 ```yaml
 services:
   networthtracker:
     image: kpa90/networthtracker:latest
     container_name: networthtracker
+    restart: unless-stopped
     ports:
       - "8026:8000"
-    volumes:
-      - /opt/networthtracker/data:/app/data
     environment:
-      DB_PATH: /app/data/networth.db
-    restart: unless-stopped
+      - TZ=Europe/Warsaw
+    volumes:
+      - networthtracker_data:/app/data
+
+volumes:
+  networthtracker_data:
 ```
 
 ```bash
@@ -295,8 +299,8 @@ docker compose up -d
 ```
 
 Zmień w pliku:
-- `8026` — port na hoście
-- `/opt/networthtracker/data` — katalog na dane SQLite (musi istnieć lub zostanie utworzony przez Dockera)
+- `8026` — port na hoście (domyślny)
+- `networthtracker_data` — nazwany wolumin na dane SQLite (tworzony automatycznie przez Dockera)
 
 ### Z lokalnego kodu (deweloperskie / samodzielny build)
 

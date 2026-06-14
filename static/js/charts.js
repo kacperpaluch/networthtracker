@@ -1,7 +1,86 @@
 (function() {
 
-var ASSET_COLORS = ['#10b981','#3b82f6','#8b5cf6','#06b6d4','#84cc16','#f59e0b','#14b8a6','#a78bfa','#34d399','#60a5fa'];
-var LIAB_COLORS  = ['#f85149','#f97316','#ec4899','#fb923c','#e11d48','#dc2626'];
+// Earth-tone palette for data viz — warm yellow primary, distinct from brand green
+var ASSET_COLORS = [
+  '#E8D87A', // warm yellow (primary)
+  '#C9A36A', // amber
+  '#8B9D77', // sage
+  '#B8A0C9', // muted violet
+  '#7BA7BC', // dusty blue
+  '#D9A574', // sand
+  '#9CAF88', // olive
+  '#C4A0A0', // dusty rose
+  '#A8B5A0', // sage light
+  '#D4B896', // wheat
+];
+var LIAB_COLORS = [
+  '#D14343', '#C97070', '#B86A6A', '#A85555', '#E07575', '#C24848',
+];
+
+var TEXT_PRIMARY = '#111111';
+var TEXT_MUTED   = '#999999';
+var GRID_COLOR   = '#F0F0F0';
+var TOOLTIP_BG   = '#111111';
+var TOOLTIP_FG   = '#FFFFFF';
+var TOOLTIP_MUTE = '#999999';
+
+var FONT_FAMILY = "'Inter', system-ui, sans-serif";
+
+function baseChartOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 400 },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'bottom',
+        labels: {
+          color: TEXT_MUTED,
+          padding: 12,
+          font: { family: FONT_FAMILY, size: 11, weight: '500' },
+          boxWidth: 10,
+          boxHeight: 10,
+          usePointStyle: true,
+          pointStyle: 'circle',
+        },
+      },
+      tooltip: {
+        backgroundColor: TOOLTIP_BG,
+        borderColor: '#222',
+        borderWidth: 1,
+        titleColor: TOOLTIP_MUTE,
+        bodyColor: TOOLTIP_FG,
+        padding: 10,
+        titleFont: { family: FONT_FAMILY, size: 11, weight: '500' },
+        bodyFont: { family: FONT_FAMILY, size: 12, weight: '500' },
+        cornerRadius: 8,
+        displayColors: true,
+        boxWidth: 8,
+        boxHeight: 8,
+        usePointStyle: true,
+      },
+    },
+    scales: {
+      x: {
+        type: 'time',
+        grid: { color: GRID_COLOR, drawBorder: false },
+        ticks: { color: TEXT_MUTED, font: { family: FONT_FAMILY, size: 11 }, maxTicksLimit: 10 },
+        border: { color: GRID_COLOR },
+      },
+      y: {
+        grid: { color: GRID_COLOR, drawBorder: false },
+        ticks: {
+          color: TEXT_MUTED,
+          font: { family: FONT_FAMILY, size: 11 },
+          callback: function(v) { return window.fmtCurrency(v); },
+        },
+        border: { color: GRID_COLOR },
+      },
+    },
+  };
+}
 
 window.renderNetworthChart = function renderNetworthChart() {
   var canvas = document.getElementById('chart-nw');
@@ -11,8 +90,9 @@ window.renderNetworthChart = function renderNetworthChart() {
 
   var labels = series.map(function(s) { return s.date; });
   var data   = series.map(function(s) { return s.net_worth; });
-  var lastVal = data[data.length-1];
-  var lineColor = (lastVal != null && lastVal >= 0) ? '#10b981' : '#f85149';
+  var lastVal = data[data.length - 1];
+  // Brand-neutral dark line; warm yellow fill so chart reads as data viz, not brand
+  var lineColor = TEXT_PRIMARY;
 
   function splitGradient(ctx) {
     var chart = ctx.chart;
@@ -24,12 +104,12 @@ window.renderNetworthChart = function renderNetworthChart() {
     var ratio = (zeroY - top) / (bottom - top);
     var g = chart.ctx.createLinearGradient(0, top, 0, bottom);
     if (ratio > 0) {
-      g.addColorStop(0, '#10b98128');
-      g.addColorStop(Math.min(ratio, 1), '#10b98108');
+      g.addColorStop(0, 'rgba(232,216,122,0.35)');
+      g.addColorStop(Math.min(ratio, 1), 'rgba(232,216,122,0.05)');
     }
     if (ratio < 1) {
-      g.addColorStop(Math.max(ratio, 0), '#f8514918');
-      g.addColorStop(1, '#f8514908');
+      g.addColorStop(Math.max(ratio, 0), 'rgba(209,67,67,0.12)');
+      g.addColorStop(1, 'rgba(209,67,67,0.02)');
     }
     return g;
   }
@@ -78,7 +158,7 @@ window.renderNetworthChart = function renderNetworthChart() {
   }
 
   var datasets = [{
-    label: 'Wartosc netto',
+    label: 'Wartość netto',
     data: data,
     borderColor: lineColor,
     backgroundColor: splitGradient,
@@ -86,15 +166,17 @@ window.renderNetworthChart = function renderNetworthChart() {
     tension: 0.4,
     pointRadius: series.length <= 12 ? 4 : 2,
     pointHoverRadius: 6,
-    pointBackgroundColor: lineColor,
-    borderWidth: 2,
+    pointBackgroundColor: '#FFFFFF',
+    pointBorderColor: lineColor,
+    pointBorderWidth: 2,
+    borderWidth: 2.5,
   }];
 
   if (data.length >= smaWindow) {
     datasets.push({
       label: 'SMA (' + smaWindow + ')',
       data: smaData,
-      borderColor: '#f59e0b',
+      borderColor: '#999999',
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       borderDash: [5, 3],
@@ -110,7 +192,7 @@ window.renderNetworthChart = function renderNetworthChart() {
     datasets.push({
       label: 'Prognoza',
       data: projData,
-      borderColor: lineColor + '88',
+      borderColor: 'rgba(17,17,17,0.4)',
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       borderDash: [6, 4],
@@ -118,52 +200,20 @@ window.renderNetworthChart = function renderNetworthChart() {
       tension: 0.3,
       pointRadius: 2,
       pointHoverRadius: 4,
-      pointBackgroundColor: lineColor + '88',
+      pointBackgroundColor: 'rgba(17,17,17,0.4)',
       order: 0,
     });
   }
 
   var chartLabels = hasProj ? projLabels : labels;
+  var opts = baseChartOptions();
+  opts.scales.x.time = { unit: labels.length <= 18 ? 'month' : 'quarter', tooltipFormat: 'yyyy-MM-dd' };
+  opts.plugins.tooltip.callbacks = {
+    title: function(items) { return window.fmtDate(items[0].label); },
+    label: function(ctx) { return ' ' + ctx.dataset.label + ': ' + window.fmtCurrency(ctx.raw); },
+  };
 
-  window._chartNW = new Chart(canvas, {
-    type: 'line',
-    data: {
-      labels: chartLabels,
-      datasets: datasets
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 400 },
-      plugins: {
-        legend: { display: true, position: 'bottom', labels: { color: '#8b949e', padding: 10, font: { size: 11 }, boxWidth: 12, usePointStyle: true } },
-        tooltip: {
-          backgroundColor: '#1c2430',
-          borderColor: '#30363d',
-          borderWidth: 1,
-          titleColor: '#8b949e',
-          bodyColor: '#e6edf3',
-          padding: 10,
-          callbacks: {
-            title: function(items) { return window.fmtDate(items[0].label); },
-            label: function(ctx) { return ' ' + ctx.dataset.label + ': ' + window.fmtCurrency(ctx.raw); },
-          }
-        }
-      },
-      scales: {
-        x: {
-          type: 'time',
-          time: { unit: labels.length <= 18 ? 'month' : 'quarter', tooltipFormat: 'yyyy-MM-dd' },
-          grid: { color: '#21262d' },
-          ticks: { color: '#8b949e', maxTicksLimit: 10 }
-        },
-        y: {
-          grid: { color: '#21262d' },
-          ticks: { color: '#8b949e', callback: function(v) { return window.fmtCurrency(v); } }
-        }
-      }
-    }
-  });
+  window._chartNW = new Chart(canvas, { type: 'line', data: { labels: chartLabels, datasets: datasets }, options: opts });
 };
 
 window.renderBreakdownChart = function renderBreakdownChart() {
@@ -179,9 +229,9 @@ window.renderBreakdownChart = function renderBreakdownChart() {
     return {
       label: d.name,
       data: d.values,
-      backgroundColor: color + 'aa',
+      backgroundColor: color,
       borderColor: color,
-      borderWidth: 1,
+      borderWidth: 0,
       fill: true,
       tension: 0.3,
       pointRadius: 0,
@@ -195,7 +245,7 @@ window.renderBreakdownChart = function renderBreakdownChart() {
   datasets.push({
     label: 'Net Worth',
     data: nwData,
-    borderColor: '#ffffff',
+    borderColor: TEXT_PRIMARY,
     backgroundColor: 'transparent',
     borderWidth: 2,
     borderDash: [4, 3],
@@ -206,47 +256,15 @@ window.renderBreakdownChart = function renderBreakdownChart() {
     order: -1,
   });
 
-  window._chartBreakdown = new Chart(canvas, {
-    type: 'line',
-    data: { labels: bd.dates, datasets: datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 400 },
-      plugins: {
-        legend: {
-          display: true,
-          position: 'bottom',
-          labels: { color: '#8b949e', padding: 10, font: { size: 11 }, boxWidth: 12 }
-        },
-        tooltip: {
-          backgroundColor: '#1c2430',
-          borderColor: '#30363d',
-          borderWidth: 1,
-          titleColor: '#8b949e',
-          bodyColor: '#e6edf3',
-          padding: 10,
-          callbacks: {
-            title: function(items) { return window.fmtDate(items[0].label); },
-            label: function(ctx) { return ' ' + ctx.dataset.label + ': ' + window.fmtCurrency(ctx.raw); },
-          }
-        }
-      },
-      scales: {
-        x: {
-          type: 'time',
-          time: { unit: bd.dates.length <= 18 ? 'month' : 'quarter', tooltipFormat: 'yyyy-MM-dd' },
-          grid: { color: '#21262d' },
-          ticks: { color: '#8b949e', maxTicksLimit: 10 }
-        },
-        y: {
-          stacked: true,
-          grid: { color: '#21262d' },
-          ticks: { color: '#8b949e', callback: function(v) { return window.fmtCurrency(v); } }
-        }
-      }
-    }
-  });
+  var opts = baseChartOptions();
+  opts.scales.y.stacked = true;
+  opts.scales.x.time = { unit: bd.dates.length <= 18 ? 'month' : 'quarter', tooltipFormat: 'yyyy-MM-dd' };
+  opts.plugins.tooltip.callbacks = {
+    title: function(items) { return window.fmtDate(items[0].label); },
+    label: function(ctx) { return ' ' + ctx.dataset.label + ': ' + window.fmtCurrency(ctx.raw); },
+  };
+
+  window._chartBreakdown = new Chart(canvas, { type: 'line', data: { labels: bd.dates, datasets: datasets }, options: opts });
 };
 
 window.renderAllocationDonut = function renderAllocationDonut() {
@@ -258,7 +276,6 @@ window.renderAllocationDonut = function renderAllocationDonut() {
   var assets = structure.filter(function(a) { return a.type === 'asset' && a.value > 0; });
   if (!assets.length) return;
 
-  // Jesli konta maja kategorie — grupuj po kategorii, inaczej per konto
   var hasCategories = assets.some(function(a) { return a.category; });
   var labels, values;
   if (hasCategories) {
@@ -281,30 +298,46 @@ window.renderAllocationDonut = function renderAllocationDonut() {
       labels: labels,
       datasets: [{
         data: values,
-        backgroundColor: colors.map(function(c) { return c + 'cc'; }),
-        borderColor: '#111820',
+        backgroundColor: colors,
+        borderColor: '#FFFFFF',
         borderWidth: 2,
-        hoverBorderColor: '#252d38',
+        hoverBorderColor: '#FFFFFF',
+        hoverOffset: 6,
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: '60%',
+      cutout: '62%',
       animation: { animateRotate: true, duration: 600 },
       plugins: {
         legend: {
           display: true,
           position: 'bottom',
-          labels: { color: '#8b949e', padding: 8, font: { size: 11 }, boxWidth: 10, usePointStyle: true }
+          labels: {
+            color: TEXT_MUTED,
+            padding: 10,
+            font: { family: FONT_FAMILY, size: 11, weight: '500' },
+            boxWidth: 10,
+            boxHeight: 10,
+            usePointStyle: true,
+            pointStyle: 'circle',
+          }
         },
         tooltip: {
-          backgroundColor: '#1c2430',
-          borderColor: '#30363d',
+          backgroundColor: TOOLTIP_BG,
+          borderColor: '#222',
           borderWidth: 1,
-          titleColor: '#8b949e',
-          bodyColor: '#e6edf3',
+          titleColor: TOOLTIP_MUTE,
+          bodyColor: TOOLTIP_FG,
           padding: 10,
+          titleFont: { family: FONT_FAMILY, size: 11, weight: '500' },
+          bodyFont: { family: FONT_FAMILY, size: 12, weight: '500' },
+          cornerRadius: 8,
+          displayColors: true,
+          boxWidth: 8,
+          boxHeight: 8,
+          usePointStyle: true,
           callbacks: {
             label: function(ctx) {
               var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
@@ -329,20 +362,24 @@ window.renderMonthlyChart = function renderMonthlyChart() {
 
   var labels = changes.map(function(m) { return m.month + '-01'; });
   var values = changes.map(function(m) { return m.change; });
-  var bgColors = values.map(function(v) { return v >= 0 ? '#10b98199' : '#f8514999'; });
-  var borderColors = values.map(function(v) { return v >= 0 ? '#10b981' : '#f85149'; });
+  // Warm yellow for positive (data viz), muted red for negative — independent of brand green
+  var posColor = '#E8D87A';
+  var negColor = '#D14343';
+  var bgColors = values.map(function(v) { return v >= 0 ? posColor : negColor; });
+  var borderColors = values.map(function(v) { return v >= 0 ? '#C9B85E' : '#A83636'; });
 
   window._chartMonthly = new Chart(canvas, {
     type: 'bar',
     data: {
       labels: labels,
       datasets: [{
-        label: 'Zmiana miesieczna',
+        label: 'Zmiana miesięczna',
         data: values,
         backgroundColor: bgColors,
         borderColor: borderColors,
-        borderWidth: 1,
-        borderRadius: 4,
+        borderWidth: 0,
+        borderRadius: 6,
+        maxBarThickness: 36,
       }]
     },
     options: {
@@ -352,17 +389,18 @@ window.renderMonthlyChart = function renderMonthlyChart() {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#1c2430',
-          borderColor: '#30363d',
+          backgroundColor: TOOLTIP_BG,
+          borderColor: '#222',
           borderWidth: 1,
-          titleColor: '#8b949e',
-          bodyColor: '#e6edf3',
+          titleColor: TOOLTIP_MUTE,
+          bodyColor: TOOLTIP_FG,
           padding: 10,
+          titleFont: { family: FONT_FAMILY, size: 11, weight: '500' },
+          bodyFont: { family: FONT_FAMILY, size: 12, weight: '500' },
+          cornerRadius: 8,
+          displayColors: false,
           callbacks: {
-            title: function(items) {
-              var d = items[0].label;
-              return d.slice(0, 7);
-            },
+            title: function(items) { var d = items[0].label; return d.slice(0, 7); },
             label: function(ctx) { return ' ' + window.fmtCurrency(ctx.raw); },
           }
         }
@@ -371,12 +409,14 @@ window.renderMonthlyChart = function renderMonthlyChart() {
         x: {
           type: 'time',
           time: { unit: 'month', tooltipFormat: 'yyyy-MM', displayFormats: { month: 'MM/yy' } },
-          grid: { color: '#21262d' },
-          ticks: { color: '#8b949e', maxTicksLimit: 12 }
+          grid: { display: false },
+          ticks: { color: TEXT_MUTED, font: { family: FONT_FAMILY, size: 11 }, maxTicksLimit: 12 },
+          border: { color: GRID_COLOR },
         },
         y: {
-          grid: { color: '#21262d' },
-          ticks: { color: '#8b949e', callback: function(v) { return window.fmtCurrency(v); } }
+          grid: { color: GRID_COLOR, drawBorder: false },
+          ticks: { color: TEXT_MUTED, font: { family: FONT_FAMILY, size: 11 }, callback: function(v) { return window.fmtCurrency(v); } },
+          border: { color: GRID_COLOR },
         }
       }
     }
