@@ -20,7 +20,7 @@ def _ensure_dir():
 @contextmanager
 def get_db():
     _ensure_dir()
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -36,6 +36,8 @@ def get_db():
 def init_db():
     _ensure_dir()
     with get_db() as conn:
+        # WAL: lepsza współbieżność odczyt/zapis (np. auto-backup równolegle z requestami)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS accounts (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -767,6 +769,8 @@ def export_data() -> dict:
 
 
 def import_data(data: dict) -> dict:
+    # Siatka bezpieczeństwa: zanim wyczyścimy bazę, zrób kopię (bez pruningu)
+    safety = create_backup(prune=False) if os.path.exists(DB_PATH) else None
     with get_db() as conn:
         conn.execute("DELETE FROM entries")
         conn.execute("DELETE FROM snapshots")
@@ -799,7 +803,7 @@ def import_data(data: dict) -> dict:
                  settings.get("milestone_goal"),
                  settings.get("webhook_url")),
             )
-    return {"ok": True, "imported": {
+    return {"ok": True, "pre_import_backup": safety["filename"] if safety else None, "imported": {
         "accounts":   len(data.get("accounts",   [])),
         "snapshots":  len(data.get("snapshots",  [])),
         "entries":    len(data.get("entries",    [])),

@@ -23,7 +23,7 @@ Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwa
 - **Historia snapshotów**: tabela ze zwijalnymi detalami + sparkline (miniaturowy wykres trendu) dla każdego wiersza
 - **Zarządzanie kontami**: dodawanie, edycja, archiwizacja, usuwanie; nazwy kont są unikalne (case-insensitive)
 - **Backup**: automatyczny wg konfigurowalnego harmonogramu cron (domyślnie 4:00), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku; harmonogram ustawiany z poziomu zakładki Backup (działa bez restartu). Przed każdym przywróceniem tworzony jest automatyczny backup bieżącej bazy, a przywracany plik jest walidowany (`PRAGMA integrity_check` + obecność wymaganych tabel).
-- **Eksport / Import** danych w formacie JSON (pełna baza: konta, snapshoty, wpisy, cele, ustawienia)
+- **Eksport / Import** danych w formacie JSON (pełna baza: konta, snapshoty, wpisy, cele, ustawienia). Import nadpisuje całą bazę, ale najpierw automatycznie tworzy backup bieżącego stanu — analogicznie do przywracania.
 - **Sync API** (`POST /api/sync`) — endpoint do automatycznej aktualizacji stanów kont z zewnętrznych źródeł (np. n8n); przyjmuje tablicę `[{date, account_name, value}]`, tworzy lub aktualizuje snapshot
 - **Webhook wychodzący** — opcjonalny URL (zakładka Backup), na który aplikacja wysyła POST JSON przy zdarzeniach: `snapshot_created`, `sync_completed`, `milestone_achieved` (każdy cel notyfikowany jednokrotnie)
 - Nowoczesny, jasny motyw w stylu SaaS (białe tło, akcent zielony `#5EA832`, nagłówki Playfair Display, treść Inter)
@@ -264,7 +264,7 @@ Każdy cel jest notyfikowany tylko raz (pole `notified_at`). Błędy wysyłki s�
 | Metoda | Endpoint | Opis |
 |---|---|---|
 | GET | `/api/export` | Pobierz plik JSON z całą bazą |
-| POST | `/api/import` | Importuj JSON (nadpisuje całą bazę) |
+| POST | `/api/import` | Importuj JSON (nadpisuje całą bazę; przed czyszczeniem tworzy automatyczny backup zwracany jako `pre_import_backup`) |
 
 ---
 
@@ -404,3 +404,5 @@ Frontend jest **Single Page Application** — struktura HTML w `index.html`, sty
 - **Pre-fill snapshotów**: nowy snapshot jest wstępnie wypełniany wartościami z ostatniego snapshotu — użytkownik zmienia tylko to, co się zmieniło
 - **CAGR**: liczony tylko gdy jest przynajmniej rok danych i obie wartości (pierwsza i ostatnia) są dodatnie
 - **Porównanie dat**: `get_stats_compare` wyszukuje najbliższy snapshot **przed** podaną datą (nie musi być dokładne trafienie)
+- **SQLite WAL**: baza działa w trybie `journal_mode=WAL` z `timeout=5s` na połączeniu — lepsza współbieżność odczyt/zapis (np. auto-backup równolegle z requestami) i odporność na „database is locked"
+- **Postęp celów**: pasek liczy drogę przebytą od pierwszego snapshotu (punkt startu) do wartości docelowej, z kierunkiem celu wyznaczanym względem startu (działa też dla celów malejących, np. redukcji długu)

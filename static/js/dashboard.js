@@ -272,21 +272,19 @@ window.renderMilestone = function renderMilestone() {
     return;
   }
 
-  var firstVal = s.first_date ? (window.S.series.length ? window.S.series[0].net_worth : 0) : 0;
+  var firstVal = window.S.series.length ? window.S.series[0].net_worth : 0;
 
   milestones.forEach(function(m) {
-    var isUp = m.target_value > nw;
-    var start = isUp ? nw : m.target_value;
-    var end   = isUp ? m.target_value : nw;
-    var denom = end - start;
-    if (Math.abs(denom) < 0.01) denom = 1;
-    var base = isUp ? firstVal : firstVal;
-    var progSpan = nw;
-    var pct = Math.min(100, Math.max(0, ((progSpan - start) / denom) * 100));
+    // Kierunek celu liczymy względem punktu startu (pierwszy snapshot),
+    // a postęp to droga przebyta od startu do celu — nie od bieżącej wartości.
+    var goalUp = m.target_value >= firstVal;
+    var isReached = goalUp ? nw >= m.target_value : nw <= m.target_value;
+    var denom = m.target_value - firstVal;
+    if (Math.abs(denom) < 0.01) denom = (m.target_value - nw) || 1;
+    var pct = isReached ? 100 : Math.min(100, Math.max(0, ((nw - firstVal) / denom) * 100));
     var barWidth = pct < 3 && pct > 0 ? 3 : pct;
     var remaining = Math.abs(m.target_value - nw);
-    var isReached = (isUp && nw >= m.target_value) || (!isUp && nw <= m.target_value);
-    var barCls = isReached ? ' milestone-bar-done' : (isUp ? '' : ' milestone-bar-down');
+    var barCls = isReached ? ' milestone-bar-done' : (goalUp ? '' : ' milestone-bar-down');
 
     var dateStr = m.target_date ? window.fmtDate(m.target_date) : '';
     var labelStr = m.label ? window.esc(m.label) : (dateStr || 'Cel');
