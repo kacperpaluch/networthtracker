@@ -4,11 +4,21 @@ services:
     container_name: networthtracker
     restart: unless-stopped
     ports:
-      - "8026:8000"
+      - "${APP_PORT:-3000}:8000"
     environment:
-      - TZ=Europe/Warsaw
+      DATABASE_URL: sqlite:////data/networth.db
+      BACKUP_CRON: "${BACKUP_CRON:-0 3 * * *}"
+      BACKUP_RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-7}"
+      RUN_BACKUP_ON_START: "${RUN_BACKUP_ON_START:-true}"
+      TZ: "${TZ:-Europe/Warsaw}"
     volumes:
-      - networthtracker_data:/app/data
+      - networthtracker_v2_data:/data
+      - ${BACKUP_DIR:-./backups}:/backups
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 volumes:
-  networthtracker_data:
+  networthtracker_v2_data:

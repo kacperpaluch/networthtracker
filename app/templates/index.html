@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Lokalny tracker wartości netto">
+    <meta property="og:title" content="Worthly">
+    <meta property="og:description" content="Twój majątek. Jasny obraz.">
+    <meta property="og:image" content="/static/og.png">
+    <title>Worthly — prywatny tracker wartości netto</title>
+    <link rel="icon" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/styles.css?v={{ app_version }}">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <span class="brand-mark">↗</span>
+          <strong>Worthly</strong>
+          <button class="icon-button mobile-only" id="closeMenu" aria-label="Zamknij menu">×</button>
+        </div>
+
+        <nav class="nav" aria-label="Nawigacja główna">
+          <button class="nav-item active" data-view="dashboard"><span class="nav-icon">⌂</span>Przegląd</button>
+          <button class="nav-item" data-view="accounts"><span class="nav-icon">▣</span>Konta <span class="nav-count" id="accountCount">0</span></button>
+          <button class="nav-item" data-view="activity"><span class="nav-icon">↻</span>Aktywność</button>
+        </nav>
+
+        <div class="sidebar-tools">
+          <span class="sidebar-label">Narzędzia</span>
+          <button id="quickUpdate"><span class="nav-icon">↻</span>Aktualizuj salda</button>
+          <button data-view="report"><span class="nav-icon">▤</span>Raporty</button>
+          <button data-view="goals"><span class="nav-icon">◎</span>Cele finansowe</button>
+        </div>
+
+        <div class="local-card">
+          <span class="local-icon">✓</span>
+          <div><strong>Dane lokalne</strong><small>SQLite · bez chmury</small></div>
+        </div>
+
+        <button class="profile" id="settingsButton" aria-label="Otwórz ustawienia">
+          <span class="avatar">KP</span>
+          <span><strong>Moje finanse</strong><small id="profileCurrency">Waluta: PLN</small></span>
+          <span class="gear" aria-hidden="true">⚙</span>
+        </button>
+      </aside>
+
+      <section class="content">
+        <header class="topbar">
+          <button class="icon-button menu-button" id="openMenu" aria-label="Otwórz menu">☰</button>
+          <div class="page-title">
+            <strong id="pageTitle">Przegląd majątku</strong>
+            <small id="lastUpdated">Ładowanie danych…</small>
+          </div>
+          <div class="top-actions">
+            <div class="notification-wrap">
+              <button class="icon-button notification-button" id="notificationButton" aria-label="Przypomnienia">◔<i id="notificationDot"></i></button>
+              <div class="notification-panel" id="notificationPanel" hidden></div>
+            </div>
+            <button class="button secondary desktop-action" id="addAccountTop">＋ Dodaj konto</button>
+            <button class="button primary" id="updateTop">↻ <span>Aktualizuj</span></button>
+          </div>
+        </header>
+
+        <div class="error-banner" id="errorBanner" hidden>
+          <span>Nie udało się pobrać danych.</span>
+          <button id="retryButton">Spróbuj ponownie</button>
+        </div>
+
+        <main id="mainContent" class="main-content" aria-live="polite">
+          <div class="loading-layout">
+            <div class="skeleton skeleton-hero"></div>
+            <div class="loading-grid"><div class="skeleton skeleton-chart"></div><div class="skeleton skeleton-chart"></div></div>
+          </div>
+        </main>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="accountModal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
+        <header class="modal-header">
+          <div><h2 id="accountModalTitle">Dodaj nowe konto</h2><p>Dodaj aktywo lub zobowiązanie do swojego majątku.</p></div>
+          <button class="icon-button close-modal" aria-label="Zamknij">×</button>
+        </header>
+        <form id="accountForm" class="form">
+          <div class="kind-toggle">
+            <button type="button" class="active" data-kind="asset">↗ Aktywo</button>
+            <button type="button" data-kind="liability">↘ Zobowiązanie</button>
+          </div>
+          <input type="hidden" name="kind" value="asset">
+          <label>Nazwa konta<input name="name" required maxlength="120" placeholder="np. Konto oszczędnościowe"></label>
+          <div class="form-row">
+            <label>Instytucja<input name="institution" maxlength="120" placeholder="np. ING"></label>
+            <label>Kategoria<select name="category" id="categorySelect"></select></label>
+          </div>
+          <div class="form-row">
+            <label>Waluta konta<select name="currency"><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select></label>
+            <label>Częstotliwość<select name="update_frequency"><option value="weekly">Co tydzień</option><option value="monthly" selected>Co miesiąc</option><option value="quarterly">Co kwartał</option><option value="yearly">Co rok</option></select></label>
+          </div>
+          <label>Saldo początkowe<div class="money-input"><input name="opening_balance" required type="number" min="0" step="0.01" placeholder="0,00"><span id="openingCurrency">PLN</span></div></label>
+          <footer class="form-actions"><button type="button" class="button secondary close-modal">Anuluj</button><button class="button primary">Dodaj konto</button></footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="updateModal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle">
+        <header class="modal-header">
+          <div><h2 id="updateModalTitle">Aktualizuj saldo</h2><p>Nowa wartość zostanie zapisana w historii konta.</p></div>
+          <button class="icon-button close-modal" aria-label="Zamknij">×</button>
+        </header>
+        <form id="updateForm" class="form">
+          <label>Konto<select name="account_id" id="updateAccount"></select></label>
+          <div class="current-balance"><span>Obecne saldo</span><strong id="currentBalance">—</strong></div>
+          <label>Nowe saldo<div class="money-input"><input name="amount" required type="number" min="0" step="0.01"><span id="updateCurrency">PLN</span></div></label>
+          <label>Data snapshotu<input name="snapshot_date" required type="date"></label>
+          <label>Notatka <small>(opcjonalnie)</small><input name="note" maxlength="300" placeholder="np. aktualizacja miesięczna"></label>
+          <label class="check-row"><input name="important" type="checkbox"> Oznacz jako istotną zmianę</label>
+          <footer class="form-actions"><button type="button" class="button secondary close-modal">Anuluj</button><button class="button primary">Zapisz snapshot</button></footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="editAccountModal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="editAccountTitle">
+        <header class="modal-header">
+          <div><h2 id="editAccountTitle">Edytuj konto</h2><p id="editAccountSubtitle"></p></div>
+          <button class="icon-button close-modal" aria-label="Zamknij">×</button>
+        </header>
+        <form id="editAccountForm" class="form">
+          <input type="hidden" name="account_id">
+          <label>Nazwa konta<input name="name" required maxlength="120"></label>
+          <div class="form-row">
+            <label>Instytucja<input name="institution" maxlength="120"></label>
+            <label>Kategoria<select name="category" id="editCategorySelect"></select></label>
+          </div>
+          <label>Częstotliwość aktualizacji
+            <select name="update_frequency">
+              <option value="weekly">Co tydzień</option>
+              <option value="monthly">Co miesiąc</option>
+              <option value="quarterly">Co kwartał</option>
+              <option value="yearly">Co rok</option>
+            </select>
+          </label>
+          <footer class="form-actions split-actions">
+            <button type="button" class="button danger" id="archiveAccountButton">Archiwizuj konto</button>
+            <span class="action-spacer"></span>
+            <button type="button" class="button secondary close-modal">Anuluj</button>
+            <button class="button primary">Zapisz zmiany</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="historyModal" hidden>
+      <section class="modal wide-modal" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+        <header class="modal-header">
+          <div><h2 id="historyTitle">Historia konta</h2><p id="historySubtitle"></p></div>
+          <button class="icon-button close-modal" aria-label="Zamknij">×</button>
+        </header>
+        <div id="historyContent"></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="snapshotModal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="snapshotModalTitle">
+        <header class="modal-header">
+          <div><h2 id="snapshotModalTitle">Edytuj snapshot</h2><p id="snapshotModalSubtitle"></p></div>
+          <button class="icon-button close-modal" aria-label="Zamknij">×</button>
+        </header>
+        <form id="snapshotForm" class="form">
+          <input type="hidden" name="snapshot_id">
+          <input type="hidden" name="account_id">
+          <label>Saldo<div class="money-input"><input name="amount" required type="number" min="0" step="0.01"><span id="snapshotCurrency">PLN</span></div></label>
+          <label>Data snapshotu<input name="snapshot_date" required type="date"></label>
+          <label>Notatka<input name="note" maxlength="300" placeholder="Opcjonalny opis zmiany"></label>
+          <label class="check-row"><input name="important" type="checkbox"> Istotna zmiana</label>
+          <footer class="form-actions split-actions">
+            <button type="button" class="button danger" id="deleteSnapshotButton">Usuń snapshot</button>
+            <span class="action-spacer"></span>
+            <button type="button" class="button secondary close-modal">Anuluj</button>
+            <button class="button primary">Zapisz korektę</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="settingsModal" hidden>
+      <section class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <header class="modal-header">
+          <div><h2 id="settingsTitle">Ustawienia</h2><p>Konfiguracja i zarządzanie lokalnymi danymi.</p></div>
+          <button class="icon-button close-modal" aria-label="Zamknij">×</button>
+        </header>
+        <div class="settings-content">
+          <section class="settings-section">
+            <h3>Preferencje</h3>
+            <form id="settingsForm" class="preferences-form">
+              <label>Waluta bazowa<select name="base_currency"><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select></label>
+              <label>Format daty<select name="date_format"><option>DD.MM.YYYY</option><option>YYYY-MM-DD</option><option>DD/MM/YYYY</option></select></label>
+              <button class="button primary">Zapisz preferencje</button>
+            </form>
+            <p class="settings-help">Konta mogą mieć różne waluty. Wartości historyczne przeliczane są po zapisanym kursie średnim NBP.</p>
+            <div class="setting-row"><div><strong>Przechowywanie danych</strong><small>Pojedynczy lokalny plik w wolumenie Dockera</small></div><span class="setting-value">SQLite</span></div>
+            <div class="setting-row"><div><strong>Automatyczny backup</strong><small>Codziennie o 03:00 · retencja 7 dni</small></div><span class="setting-value">./backups</span></div>
+          </section>
+          <section class="settings-section">
+            <h3>Dane aplikacji</h3>
+            <div class="settings-stats">
+              <div><strong id="settingsAccounts">—</strong><span>kont</span></div>
+              <div><strong id="settingsSnapshots">—</strong><span>snapshotów</span></div>
+              <div><strong id="settingsVersion">—</strong><span>wersja</span></div>
+            </div>
+          </section>
+          <section class="settings-section">
+            <h3>Eksport i kopia danych</h3>
+            <p class="settings-help">Eksport nie zmienia bazy. Plik JSON zawiera pełną kopię danych, a CSV nadaje się do arkusza kalkulacyjnego.</p>
+            <div class="export-actions">
+              <a class="button secondary" href="/api/export/json" download>↓ Kopia JSON</a>
+              <a class="button secondary" href="/api/export/csv" download>↓ Historia CSV</a>
+            </div>
+          </section>
+          <section class="settings-section">
+            <h3>Import danych</h3>
+            <p class="settings-help">Kopia JSON może scalić dane albo całkowicie przywrócić bazę. CSV jest zawsze bezpiecznie scalany, a istniejące snapshoty nie są duplikowane.</p>
+            <div class="import-box">
+              <label class="file-picker" for="importFile"><span>↑</span><span><strong id="importFileName">Wybierz plik JSON lub CSV</strong><small>Maksymalnie 10 MB</small></span></label>
+              <input id="importFile" type="file" accept=".json,.csv,application/json,text/csv" hidden>
+              <label class="import-mode">Sposób importu JSON
+                <select id="importMode">
+                  <option value="merge">Scal z obecnymi danymi</option>
+                  <option value="replace">Przywróć kopię i zastąp bazę</option>
+                </select>
+              </label>
+              <div class="import-warning" id="importWarning" hidden>Tryb przywracania usunie obecną zawartość bazy przed zaimportowaniem kopii.</div>
+              <button class="button primary" id="importButton" disabled>Importuj dane</button>
+            </div>
+          </section>
+        </div>
+        <footer class="settings-footer"><span>Worthly działa wyłącznie lokalnie.</span><button class="button primary close-modal">Gotowe</button></footer>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="goalModal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="goalModalTitle">
+        <header class="modal-header">
+          <div><h2 id="goalModalTitle">Nowy cel finansowy</h2><p>Cel jest porównywany z bieżącą wartością netto.</p></div>
+          <button class="icon-button close-modal" aria-label="Zamknij">×</button>
+        </header>
+        <form id="goalForm" class="form">
+          <label>Nazwa celu<input name="name" required maxlength="120" placeholder="np. Wartość netto 500 000 zł"></label>
+          <label>Kwota docelowa<div class="money-input"><input name="target_amount" required type="number" min="0.01" step="0.01"><span id="goalCurrency">PLN</span></div></label>
+          <label>Termin <small>(opcjonalnie)</small><input name="target_date" type="date"></label>
+          <footer class="form-actions"><button type="button" class="button secondary close-modal">Anuluj</button><button class="button primary">Dodaj cel</button></footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+    <script>window.WORTHLY_VERSION = "{{ app_version }}";</script>
+    <script src="/static/app.js?v={{ app_version }}" defer></script>
+  </body>
+</html>

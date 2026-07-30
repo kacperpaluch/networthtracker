@@ -2,280 +2,57 @@
 
 [![Docker Hub](https://img.shields.io/docker/pulls/kpa90/networthtracker?logo=docker&label=Docker+Hub)](https://hub.docker.com/r/kpa90/networthtracker)
 
-Osobista aplikacja webowa do śledzenia wartości netto majątku w czasie. Pozwala rejestrować salda kont bankowych, inwestycji i zobowiązań w formie okresowych snapshotów, a następnie wizualizować trendy i analizować strukturę majątku.
+Prywatna aplikacja do śledzenia wartości netto. Rejestruje okresowe salda
+aktywów i zobowiązań, pokazuje historię, raporty oraz postęp celów finansowych.
+Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 
----
+## Najważniejsze funkcje
 
-## Funkcjonalności
+- konta aktywów i zobowiązań z archiwizacją;
+- osobny harmonogram aktualizacji każdego konta;
+- przypomnienia i oznaczenia nieaktualnych kont;
+- snapshoty salda z datą, notatką i wyróżnieniem istotnej zmiany;
+- historia konta z wykresem oraz korektą i usuwaniem wpisów;
+- dashboard wartości netto, aktywów, zadłużenia i alokacji;
+- raport miesięczny, raport roczny i porównania rok do roku;
+- cele finansowe z terminem i paskiem postępu;
+- konta w PLN, EUR, USD, GBP i CHF;
+- historyczne kursy średnie z NBP zapisywane przy snapshotach;
+- ustawienia waluty bazowej i formatu dat;
+- eksport i import JSON oraz eksport historii do CSV;
+- automatyczne kopie SQLite przez cron.
 
-- **Dashboard** z kartami podsumowania (wartość netto, aktywa, zobowiązania, zmiana YTD)
-- **Wykresy**:
-  - Liniowy wykres wartości netto w czasie z linią SMA (średnia krocząca) i projekcją liniową
-  - Wykres słupkowy miesięcznych zmian net worth (zielone/czerwone słupki)
-  - Stacked area chart — rozbicie na poszczególne konta
-  - Donut chart — struktura alokacji aktywów
-- **Waterfall chart**: rozbicie wpływu poszczególnych kont na zmianę net worth pomiędzy dwoma datami
-- **Porównanie okresów** (miesiąc / kwartał / rok lub daty własne) z najlepszym i najgorszym kontem + waterfall
-- **Trendy**: średnia miesięczna zmiana, CAGR (roczna stopa wzrostu), zmienność (odchylenie std), najlepszy/najgorszy miesiąc, tempo wzrostu per konto
-- **Kamienie milowe**: timeline celów finansowych z datami docelowymi, kwotami i paskami postępu. Dodawaj wiele celów (np. spłata długu, pierwsze oszczędności, FIRE) — każdy z własną datą, etykietą i wizualnym postępem. Osiągnięte cele są wyszarzone z ptaszkiem. Każdy nieosiągnięty cel pokazuje **ETA** — szacowany miesiąc osiągnięcia przy obecnym średnim tempie wzrostu.
-- **Kategorie kont**: opcjonalna kategoria (Gotówka, ETF / Akcje, Emerytura, Nieruchomości itd.) — gdy konta mają kategorie, donut alokacji grupuje aktywa po kategorii zamiast po koncie
-- **Struktura majątku**: procent każdego konta w aktywach, wskaźnik D/A (dług do aktywów)
-- **Historia snapshotów**: tabela ze zwijalnymi detalami + sparkline (miniaturowy wykres trendu) dla każdego wiersza
-- **Zarządzanie kontami**: dodawanie, edycja, archiwizacja, usuwanie; nazwy kont są unikalne (case-insensitive)
-- **Backup**: automatyczny wg konfigurowalnego harmonogramu cron (domyślnie 4:00), ręczny backup z UI, pobieranie, przywracanie z listy serwerowej lub z pliku `.db` wczytanego z dysku; harmonogram ustawiany z poziomu zakładki Backup (działa bez restartu). Przed każdym przywróceniem tworzony jest automatyczny backup bieżącej bazy, a przywracany plik jest walidowany (`PRAGMA integrity_check` + obecność wymaganych tabel).
-- **Eksport / Import** danych w formacie JSON (pełna baza: konta, snapshoty, wpisy, cele, ustawienia). Import nadpisuje całą bazę, ale najpierw automatycznie tworzy backup bieżącego stanu — analogicznie do przywracania.
-- **Sync API** (`POST /api/sync`) — endpoint do automatycznej aktualizacji stanów kont z zewnętrznych źródeł (np. n8n); przyjmuje tablicę `[{date, account_name, value}]`, tworzy lub aktualizuje snapshot
-- **Webhook wychodzący** — opcjonalny URL (zakładka Backup), na który aplikacja wysyła POST JSON przy zdarzeniach: `snapshot_created`, `sync_completed`, `milestone_achieved` (każdy cel notyfikowany jednokrotnie)
-- Nowoczesny, jasny motyw w stylu SaaS (białe tło, akcent zielony `#5EA832`, nagłówki Playfair Display, treść Inter)
-
----
-
-## Technologie
-
-### Backend
-| Technologia | Wersja | Rola |
-|---|---|---|
-| Python | 3.12 (Docker) / 3.14 (dev) | Język backendowy |
-| FastAPI | 0.115.0 | Framework HTTP / REST API |
-| Uvicorn | 0.30.0 | Serwer ASGI |
-| SQLite | (stdlib) | Baza danych |
-| APScheduler | 3.10.4 | Automatyczny backup codziennie o 4:00 |
-| python-multipart | 0.0.9 | Przesyłanie pliku .db do przywrócenia |
-| Pydantic | (via FastAPI) | Walidacja danych wejściowych |
-
-### Frontend
-| Technologia | Źródło | Rola |
-|---|---|---|
-| Vanilla JavaScript (ES2020+) | lokalne | Logika UI, obsługa API |
-| Chart.js | 4.4.0 (CDN) | Wykresy |
-| chartjs-adapter-date-fns | 3.0.0 (CDN) | Oś czasu w wykresach |
-| Playfair Display | Google Fonts | Czcionka nagłówków (serif) |
-| Inter | Google Fonts | Czcionka tekstu i UI (sans-serif) |
-| JetBrains Mono | Google Fonts | Czcionka wartości liczbowych |
-| Lucide Icons | CDN (unpkg) | Ikony UI (stroke 2px) |
-
-### Infrastruktura
-| Technologia | Rola |
-|---|---|
-| Docker | Konteneryzacja aplikacji |
-| Docker Compose | Orkiestracja, mapowanie portów i woluminu |
-
----
-
-## Struktura plików
-
-```
-networthtracker/
-├── main.py              # Aplikacja FastAPI — definicje endpointów REST API
-├── db.py                # Warstwa danych — wszystkie operacje SQLite
-├── requirements.txt     # Zależności Pythona (fastapi, uvicorn)
-├── Dockerfile           # Obraz Dockera (python:3.12-slim)
-├── docker-compose.yml   # Konfiguracja uruchomienia kontenera
-├── static/
-│   ├── index.html       # Struktura HTML (SPA), linki do CSS/JS, wyłącznie markup
-│   ├── style.css        # Cały CSS (zmienne, layout, karty, tabela, modale, formularze)
-│   └── js/
-│       ├── app.js       # Stan globalny S, init, routing zakładek, refresh danych
-│       ├── utils.js     # Narzędzia: fmtCurrency, fmtDate, esc, API helpers, modale
-│       ├── charts.js    # Wykresy Chart.js: wartość netto (liniowy), rozbicie na konta (stacked)
-│       ├── dashboard.js # Render dashboardu: karty podsumowania, porównanie, trendy, struktura
-│       ├── history.js   # Historia snapshotów, modal tworzenia/edycji snapshotu
-│       ├── accounts.js  # Lista kont, modal tworzenia/edycji konta, archiwizacja
-│       └── backup.js    # Backup (lista, tworzenie, pobieranie, przywracanie), cron, export/import
-└── data/
-    └── networth.db      # Baza danych SQLite (generowana automatycznie)
-```
-
-### Opis kluczowych plików
-
-**`main.py`** — punkt wejścia aplikacji. Zawiera:
-- Modele Pydantic (`AccountCreate`, `AccountUpdate`, `SnapshotCreate`, `SnapshotUpdate`, `EntryInput`)
-- Endpointy REST API pogrupowane na: Accounts, Snapshots, Chart data, Stats, Backup
-- Serwowanie frontendu jako pliki statyczne (`/static`) oraz catch-all route dla SPA
-
-**`db.py`** — cała logika bazodanowa. Zawiera:
-- Inicjalizację schematu (`init_db`)
-- Context manager `get_db()` z auto-commit / rollback i włączonymi foreign keys
-- CRUD dla kont i snapshotów
-- Zapytania analityczne: seria czasowa, rozbicie na konta, statystyki (CAGR, zmienność, najlepszy/najgorszy miesiąc, tempo wzrostu kont), miesięczne zmiany, porównanie okresów
-- CRUD dla celów finansowych (milestones)
-- Eksport / import całej bazy
-
-**`static/index.html`** — struktura HTML Single Page Application (nav, 4 zakładki, 2 modale). CSS i JavaScript wydzielone do osobnych plików w `static/style.css` i `static/js/*.js`.
-
-**`static/js/app.js`** — globalny stan `S`, inicjalizacja (`init`), przełączanie zakładek (`switchTab`), odświeżanie danych (`refresh`).
-
-**`static/js/utils.js`** — funkcje pomocnicze: formatowanie waluty/daty, eskejpowanie HTML, helpery API (`GET`, `POST`, `PATCH`, `DELETE`), otwieranie/zamykanie modali.
-
-**`static/js/charts.js`** — renderowanie wykresów Chart.js: liniowy net worth (z SMA + projekcją), stacked area rozbicia na konta, donut alokacji aktywów, słupkowy miesięcznych zmian.
-
-**`static/js/dashboard.js`** — render dashboardu: karty podsumowania, porównanie okresów (presety + własne daty z waterfall), trendy (śr. miesięczna, CAGR, zmienność, najlepszy/najgorszy miesiąc, tempo wzrostu kont), struktura majątku, kamień milowy.
-
-**`static/js/history.js`** — tabela historii snapshotów z możliwością rozwijania wpisów, sparkline (mini wykres trendu) w każdym wierszu, modal tworzenia/edycji snapshotu z pre-fillem wartości z poprzedniego.
-
-**`static/js/accounts.js`** — lista kont (aktywa/zobowiązania) z możliwością edycji, archiwizacji, przywracania i usuwania.
-
-**`static/js/backup.js`** — zarządzanie backupami (lista, tworzenie, pobieranie, przywracanie z serwera i z pliku, usuwanie), harmonogram cron, webhook wychodzący, eksport/import JSON.
-
----
-
-## Schemat bazy danych
-
-```sql
-accounts
-  id          INTEGER PK AUTOINCREMENT
-  name        TEXT NOT NULL  -- unikalne case-insensitive (indeks COLLATE NOCASE)
-  type        TEXT NOT NULL  -- 'asset' | 'liability'
-  category    TEXT           -- opcjonalna kategoria (np. 'Gotówka', 'ETF / Akcje')
-  archived    INTEGER DEFAULT 0  -- 0 = aktywne, 1 = zarchiwizowane
-  created_at  TEXT DEFAULT datetime('now')
-
-snapshots
-  id    INTEGER PK AUTOINCREMENT
-  date  TEXT UNIQUE  -- format: 'YYYY-MM-DD'
-
-entries
-  id          INTEGER PK AUTOINCREMENT
-  snapshot_id INTEGER → snapshots(id) ON DELETE CASCADE
-  account_id  INTEGER → accounts(id)  ON DELETE RESTRICT
-  value       REAL NOT NULL
-  UNIQUE(snapshot_id, account_id)
-
-settings
-  id             INTEGER PK CHECK(id = 1)  -- singleton
-  backup_cron    TEXT DEFAULT '0 4 * * *'  -- wyrażenie cron harmonogramu backupu
-  milestone_goal REAL                      -- [deprecated] pojedynczy cel (zastąpiony przez milestones)
-  webhook_url    TEXT                      -- URL webhooka wychodzącego (NULL = wyłączony)
-
-milestones
-  id           INTEGER PK AUTOINCREMENT
-  target_date  TEXT NOT NULL               -- format: 'YYYY-MM-DD'
-  target_value REAL NOT NULL               -- docelowa wartość net worth
-  label        TEXT                        -- opcjonalna etykieta
-  notified_at  TEXT                        -- kiedy wysłano webhook milestone_achieved (NULL = jeszcze nie)
-  created_at   TEXT DEFAULT datetime('now')
-```
-
-**Ważne reguły:**
-- Konto z wpisami (`entries`) **nie może być usunięte** — tylko zarchiwizowane
-- Usunięcie snapshotu **kasuje kaskadowo** wszystkie jego wpisy
-- Jeden snapshot na datę (constraint UNIQUE na `date`)
-- Nazwy kont są unikalne case-insensitive — wymagane do jednoznacznego dopasowania w `/api/sync`
-- Wszystkie daty walidowane na poziomie API (format `YYYY-MM-DD`)
-
----
-
-## REST API
-
-Baza URL: `http://localhost:8026`  
-Interaktywna dokumentacja: `http://localhost:8026/docs` (Swagger UI, generowany przez FastAPI)
-
-### Konta (`/api/accounts`)
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| GET | `/api/accounts` | Lista aktywnych kont |
-| GET | `/api/accounts?include_archived=true` | Lista wszystkich kont |
-| POST | `/api/accounts` | Utwórz konto `{name, type, category?}` |
-| PATCH | `/api/accounts/{id}` | Edytuj konto `{name?, type?, archived?, category?}` |
-| DELETE | `/api/accounts/{id}` | Usuń konto (tylko bez wpisów) |
-
-### Snapshoty (`/api/snapshots`)
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| GET | `/api/snapshots` | Lista wszystkich snapshotów z wpisami |
-| POST | `/api/snapshots` | Utwórz snapshot `{date, entries[]}` |
-| PATCH | `/api/snapshots/{id}` | Edytuj snapshot `{date?, entries[]?}` |
-| DELETE | `/api/snapshots/{id}` | Usuń snapshot |
-
-### Dane wykresów
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| GET | `/api/networth/series` | Seria czasowa: data, aktywa, zobowiązania, net worth |
-| GET | `/api/networth/breakdown` | Wartości per konto per data (do stacked chart) |
-
-### Statystyki
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| GET | `/api/stats/summary` | Podsumowanie: bieżące wartości, YTD, CAGR, śr. miesięczna, zmienność, najlepszy/najgorszy miesiąc, tempo wzrostu kont, dni śledzenia |
-| GET | `/api/stats/compare?from=YYYY-MM-DD&to=YYYY-MM-DD` | Porównanie dwóch dat z wpływem poszczególnych kont |
-| GET | `/api/stats/monthly` | Miesięczne zmiany net worth (do wykresu słupkowego) |
-
-### Kamienie milowe (`/api/milestones`)
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| GET | `/api/milestones` | Lista celów (sortowane po dacie) |
-| POST | `/api/milestones` | Utwórz cel `{target_date, target_value, label?}` |
-| PATCH | `/api/milestones/{id}` | Edytuj cel |
-| DELETE | `/api/milestones/{id}` | Usuń cel |
-
-### Ustawienia (`/api/settings`)
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| GET | `/api/settings` | Pobierz ustawienia (m.in. `backup_cron`, `webhook_url`) |
-| PATCH | `/api/settings` | Zapisz ustawienia `{backup_cron?, webhook_url?}` i przeplanuj scheduler; pusty `webhook_url` wyłącza webhook |
-
-### Backup — pliki .db
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| GET | `/api/backup/list` | Lista zapisanych backupów |
-| POST | `/api/backup/create` | Utwórz backup ręcznie |
-| GET | `/api/backup/download/{filename}` | Pobierz plik .db na dysk |
-| POST | `/api/backup/restore/{filename}` | Przywróć z backupu serwerowego |
-| POST | `/api/backup/restore-upload` | Przywróć z pliku .db (FormData: `file`) |
-| DELETE | `/api/backup/{filename}` | Usuń backup |
-
-### Sync — automatyczna aktualizacja z zewnętrznych źródeł (n8n itp.)
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| POST | `/api/sync` | Upsert wpisów `[{date, account_name, value}]` — tworzy lub aktualizuje snapshot |
-
-Przykład payloadu:
-```json
-[
-  {"date": "2026-06-04", "account_name": "mBank", "value": 12500.00},
-  {"date": "2026-06-04", "account_name": "Oszczędności", "value": 45000.00}
-]
-```
-
-Odpowiedź zawiera pola `synced` (udane) i `errors` (nieznane/zarchiwizowane konta). Nazwy kont są dopasowywane case-insensitively.
-
-### Webhook wychodzący
-
-Jeśli w ustawieniach skonfigurowano `webhook_url`, aplikacja wysyła `POST` z JSON-em `{event, timestamp, data}` przy zdarzeniach:
-
-| Event | Kiedy | `data` |
-|---|---|---|
-| `snapshot_created` | utworzenie snapshotu z UI | pełny snapshot z wpisami |
-| `sync_completed` | udany `POST /api/sync` | `{synced, errors}` |
-| `milestone_achieved` | net worth osiągnął `target_value` celu | cel + bieżący `net_worth` |
-
-Każdy cel jest notyfikowany tylko raz (pole `notified_at`). Błędy wysyłki są logowane i nie blokują odpowiedzi API.
-
-### JSON export / import
-
-| Metoda | Endpoint | Opis |
-|---|---|---|
-| GET | `/api/export` | Pobierz plik JSON z całą bazą |
-| POST | `/api/import` | Importuj JSON (nadpisuje całą bazę; przed czyszczeniem tworzy automatyczny backup zwracany jako `pre_import_backup`) |
-
----
+Nie ma logowania ani połączeń z bankami. Projekt zakłada jednego użytkownika
+i uruchomienie w zaufanej sieci lokalnej.
 
 ## Uruchomienie
 
-### Z Docker Hub (zalecane — Portainer / serwer)
+Obraz jest dostępny na
+[Docker Hub](https://hub.docker.com/r/kpa90/networthtracker) dla
+`linux/amd64` i `linux/arm64`.
 
-Obraz dostępny na Docker Hub: **[kpa90/networthtracker](https://hub.docker.com/r/kpa90/networthtracker)**  
-Platforma: `linux/amd64` + `linux/arm64` (Raspberry Pi, Orange Pi itp.)
+```bash
+mkdir networthtracker
+cd networthtracker
+curl -O https://raw.githubusercontent.com/kacperpaluch/networthtracker/main/docker-compose.yml
+mkdir -p backups
+docker compose up -d
+```
 
-Skopiuj poniższy `docker-compose.yml` i uruchom:
+Aplikacja będzie dostępna pod adresem:
+
+```text
+http://localhost:3000
+```
+
+Przy pierwszym uruchomieniu pusta baza otrzymuje przykładowe konta i roczną
+historię. Można je później edytować, archiwizować albo zastąpić własnymi danymi.
+
+Compose używa nowego wolumenu `networthtracker_v2_data`. Poprzednia wersja
+projektu miała inny schemat bazy, dlatego jej wolumen nie jest automatycznie
+nadpisywany ani podłączany do nowej aplikacji.
+
+## Docker Compose
 
 ```yaml
 services:
@@ -284,125 +61,102 @@ services:
     container_name: networthtracker
     restart: unless-stopped
     ports:
-      - "8026:8000"
+      - "3000:8000"
     environment:
-      - TZ=Europe/Warsaw
+      DATABASE_URL: sqlite:////data/networth.db
+      BACKUP_CRON: "0 3 * * *"
+      BACKUP_RETENTION_DAYS: "7"
+      RUN_BACKUP_ON_START: "true"
+      TZ: Europe/Warsaw
     volumes:
-      - networthtracker_data:/app/data
+      - networthtracker_v2_data:/data
+      - ./backups:/backups
 
 volumes:
-  networthtracker_data:
+  networthtracker_v2_data:
 ```
 
-```bash
-docker compose up -d
-```
-
-Zmień w pliku:
-- `8026` — port na hoście (domyślny)
-- `networthtracker_data` — nazwany wolumin na dane SQLite (tworzony automatycznie przez Dockera)
-
-### Z lokalnego kodu (deweloperskie / samodzielny build)
-
-```bash
-# Zbuduj i uruchom
-docker compose up -d --build
-
-# Zatrzymaj
-docker compose down
-
-# Logi
-docker compose logs -f
-```
-
-Aplikacja dostępna pod: `http://<host>:8026`
-
-**Dane trwałe:** baza SQLite jest montowana jako wolumin — dane przeżywają rebuild kontenera.
-
-### Lokalnie (deweloperskie)
-
-```bash
-# Utwórz i aktywuj środowisko wirtualne
-python -m venv .venv
-source .venv/bin/activate
-
-# Zainstaluj zależności
-pip install -r requirements.txt
-
-# Uruchom
-uvicorn main:app --reload --port 8000
-```
-
-Aplikacja dostępna pod: `http://localhost:8000`
-
----
+Jeden kontener uruchamia FastAPI i systemowy cron. Baza znajduje się w named
+volume, natomiast kopie są zwykłymi plikami w `./backups` na hoście.
 
 ## Konfiguracja
 
-Zmienne środowiskowe (ustawiane w `docker-compose.yml`):
+| Zmienna | Domyślna wartość | Znaczenie |
+| --- | --- | --- |
+| `APP_PORT` | `3000` | port hosta używany przez dołączony Compose |
+| `DATABASE_URL` | `sqlite:////data/networth.db` | lokalizacja bazy |
+| `BACKUP_DIR` | `./backups` | folder hosta mapowany przez Compose |
+| `BACKUP_CRON` | `0 3 * * *` | harmonogram kopii |
+| `BACKUP_RETENTION_DAYS` | `7` | liczba dni przechowywania kopii |
+| `RUN_BACKUP_ON_START` | `true` | wykonanie kopii przy uruchomieniu |
+| `TZ` | `Europe/Warsaw` | strefa czasowa crona |
 
-| Zmienna | Domyślna | Opis |
-|---|---|---|
-| `DB_PATH` | `data/networth.db` | Ścieżka do pliku bazy SQLite |
-| `BACKUP_DIR` | `<katalog DB>/backups` | Katalog na pliki backup |
-| `BACKUP_KEEP` | `30` | Liczba zachowywanych automatycznych backupów |
+Przykład uruchomienia na innym porcie:
 
----
-
-## Format pliku eksportu (JSON)
-
-```json
-{
-  "version": 2,
-  "exported_at": "2024-01-15T12:00:00",
-  "accounts": [
-    {"id": 1, "name": "mBank", "type": "asset", "category": "Gotówka", "archived": 0, "created_at": "..."}
-  ],
-  "snapshots": [
-    {"id": 1, "date": "2024-01-01"}
-  ],
-  "entries": [
-    {"id": 1, "snapshot_id": 1, "account_id": 1, "value": 15000.00}
-  ],
-  "milestones": [
-    {"id": 1, "target_date": "2025-12-31", "target_value": 100000.0, "label": "FIRE etap 1", "notified_at": null, "created_at": "..."}
-  ],
-  "settings": {"id": 1, "backup_cron": "0 4 * * *", "milestone_goal": null, "webhook_url": null}
-}
+```bash
+APP_PORT=8026 docker compose up -d
 ```
 
-Import akceptuje też starszy format (`version: 1`) bez `milestones`/`settings`.
+## Backup i odtworzenie
 
----
+Backup używa mechanizmu SQLite `.backup`, a następnie wykonuje
+`PRAGMA integrity_check`. Dopiero poprawny plik otrzymuje nazwę:
 
-## Architektura — przepływ danych
-
-```
-Przeglądarka (index.html)
-  │
-  │  fetch() calls (JSON REST)
-  ▼
-FastAPI (main.py)
-  │  Pydantic validation
-  │  HTTP routing
-  ▼
-db.py (warstwa danych)
-  │  sqlite3 + context manager
-  ▼
-SQLite (data/networth.db)
+```text
+backups/networthtracker-RRRR-MM-DD_GG-MM-SS.db
 ```
 
-Frontend jest **Single Page Application** — struktura HTML w `index.html`, style w `style.css`, a logika podzielona na moduły JS w `static/js/`. Każdy moduł to IIFE komunikujące się przez globalny obiekt `window`. Po załadowaniu strony JavaScript pobiera dane z API i renderuje DOM dynamicznie. Nie ma żadnego frameworku JS — czysty Vanilla JS z `fetch()`.
+Do ręcznego odtworzenia zatrzymaj kontener, zastąp plik `networth.db` w
+wolumenie wybraną kopią i ponownie uruchom usługę. Eksport JSON z ustawień jest
+prostszą metodą logicznego przenoszenia danych między instalacjami.
 
----
+## Waluty
 
-## Uwagi deweloperskie
+Kwota snapshotu pozostaje w walucie konta. Dla obcej waluty aplikacja pobiera
+ostatni kurs średni NBP dostępny dla wskazanej daty i zapisuje go lokalnie.
+Weekend lub święto korzysta z ostatniego wcześniejszego notowania. Zmiana
+waluty bazowej wpływa na prezentację i raporty, ale nie zmienia oryginalnych
+kwot.
 
-- **Waluta**: wartości wyświetlane jako PLN (`Intl.NumberFormat('pl-PL', {currency:'PLN'})`)
-- **Typy kont**: tylko `asset` (aktywo) lub `liability` (zobowiązanie) — walidacja w API i DB
-- **Archiwizacja vs usuwanie**: konta z historią można tylko archiwizować; znikają z formularza nowych snapshotów ale zachowana jest historia
-- **Pre-fill snapshotów**: nowy snapshot jest wstępnie wypełniany wartościami z ostatniego snapshotu — użytkownik zmienia tylko to, co się zmieniło
-- **CAGR**: liczony tylko gdy jest przynajmniej rok danych i obie wartości (pierwsza i ostatnia) są dodatnie
-- **Porównanie dat**: `get_stats_compare` wyszukuje najbliższy snapshot **przed** podaną datą (nie musi być dokładne trafienie)
-- **SQLite WAL**: baza działa w trybie `journal_mode=WAL` z `timeout=5s` na połączeniu — lepsza współbieżność odczyt/zapis (np. auto-backup równolegle z requestami) i odporność na „database is locked"
-- **Postęp celów**: pasek liczy drogę przebytą od pierwszego snapshotu (punkt startu) do wartości docelowej, z kierunkiem celu wyznaczanym względem startu (działa też dla celów malejących, np. redukcji długu)
+Pierwszy zapis wartości w obcej walucie wymaga dostępu kontenera do
+`https://api.nbp.pl`.
+
+## Rozwój lokalny
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+mkdir -p data
+uvicorn app.main:app --reload
+```
+
+Testy:
+
+```bash
+PYTHONPATH=. pytest -q
+```
+
+Budowa obrazu:
+
+```bash
+docker build -t networthtracker:local .
+```
+
+Dokumentacja API jest dostępna pod `/docs`. Szczegóły architektury znajdują
+się w [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
+
+## Struktura
+
+```text
+app/                    FastAPI, modele, API i interfejs
+  static/               JavaScript, CSS i grafiki
+  templates/            szkielet HTML
+scripts/                uruchomienie kontenera i backup
+tests/                  testy API
+docs/                   dokumentacja techniczna
+Dockerfile
+docker-compose.yml
+requirements.txt
+requirements-dev.txt
+```

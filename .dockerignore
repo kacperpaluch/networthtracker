@@ -1,0 +1,9 @@
+.git
+.DS_Store
+.env
+data
+**/__pycache__
+.pytest_cache
+backups
+tests
+docs

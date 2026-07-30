@@ -1,43 +1,16 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-venv/
-env/
-*.egg-info/
-dist/
-build/
-
-# Environment & secrets
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-secrets/
-secrets.json
-secrets.yaml
-secrets.yml
-
-# Database (dane osobiste)
-data/
-*.db
-*.sqlite
-*.sqlite3
-
-# Claude Code
-.claude/
-
-# Logs
-*.log
-logs/
-
-# OS
 .DS_Store
-Thumbs.db
-
-# Editor
-.vscode/
-.idea/
-*.swp
+.env
+.env.local
+!.env.example
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+data/
+backups/*.db
+backups/*.tmp
+htmlcov/
+coverage.xml
+.coverage
+*.log
+*.tmp
