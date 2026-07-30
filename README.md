@@ -45,8 +45,9 @@ Aplikacja będzie dostępna pod adresem:
 http://localhost:3000
 ```
 
-Przy pierwszym uruchomieniu pusta baza otrzymuje przykładowe konta i roczną
-historię. Można je później edytować, archiwizować albo zastąpić własnymi danymi.
+Pierwsze uruchomienie tworzy pustą bazę. Jeśli chcesz jednorazowo rozpocząć
+z przykładowymi kontami i roczną historią, ustaw `LOAD_DEMO_DATA=true` przed
+pierwszym startem.
 
 Compose używa nowego wolumenu `networthtracker_v2_data`. Poprzednia wersja
 projektu miała inny schemat bazy, dlatego jej wolumen nie jest automatycznie
@@ -64,6 +65,7 @@ services:
       - "3000:8000"
     environment:
       DATABASE_URL: sqlite:////data/networth.db
+      LOAD_DEMO_DATA: "false"
       BACKUP_CRON: "0 3 * * *"
       BACKUP_RETENTION_DAYS: "7"
       RUN_BACKUP_ON_START: "true"
@@ -85,6 +87,7 @@ volume, natomiast kopie są zwykłymi plikami w `./backups` na hoście.
 | --- | --- | --- |
 | `APP_PORT` | `3000` | port hosta używany przez dołączony Compose |
 | `DATABASE_URL` | `sqlite:////data/networth.db` | lokalizacja bazy |
+| `LOAD_DEMO_DATA` | `false` | dodanie danych demonstracyjnych do pustej bazy |
 | `BACKUP_DIR` | `./backups` | folder hosta mapowany przez Compose |
 | `BACKUP_CRON` | `0 3 * * *` | harmonogram kopii |
 | `BACKUP_RETENTION_DAYS` | `7` | liczba dni przechowywania kopii |

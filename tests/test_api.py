@@ -2,14 +2,23 @@ import os
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = "sqlite:///./data/test.db"
+os.environ["LOAD_DEMO_DATA"] = "true"
 Path("./data/test.db").unlink(missing_ok=True)
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.main import env_flag
 
 
 client = TestClient(app)
+
+
+def test_demo_data_flag_is_opt_in(monkeypatch):
+    monkeypatch.delenv("LOAD_DEMO_DATA", raising=False)
+    assert env_flag("LOAD_DEMO_DATA") is False
+    monkeypatch.setenv("LOAD_DEMO_DATA", "true")
+    assert env_flag("LOAD_DEMO_DATA") is True
 
 
 def test_dashboard_has_seed_data():

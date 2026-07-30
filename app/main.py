@@ -4,6 +4,7 @@ from datetime import date, timedelta
 import csv
 import io
 import json
+import os
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -70,10 +71,20 @@ def migrate_sqlite_schema() -> None:
 
 
 migrate_sqlite_schema()
-with SessionLocal() as startup_db:
-    seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.1.1")
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+if env_flag("LOAD_DEMO_DATA"):
+    with SessionLocal() as startup_db:
+        seed_database(startup_db)
+
+app = FastAPI(title="Worthly", version="1.1.2")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 

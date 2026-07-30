@@ -2,7 +2,7 @@
 
 Prywatny tracker wartości netto działający lokalnie w jednym kontenerze.
 FastAPI, SQLite, responsywny interfejs i automatyczny backup bez zewnętrznej
-bazy danych.
+bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 
 ## Funkcje
 
@@ -27,6 +27,7 @@ services:
       - "3000:8000"
     environment:
       DATABASE_URL: sqlite:////data/networth.db
+      LOAD_DEMO_DATA: "false"
       BACKUP_CRON: "0 3 * * *"
       BACKUP_RETENTION_DAYS: "7"
       RUN_BACKUP_ON_START: "true"

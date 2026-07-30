@@ -2,7 +2,8 @@ FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DATABASE_URL=sqlite:////data/networth.db
+    DATABASE_URL=sqlite:////data/networth.db \
+    LOAD_DEMO_DATA=false
 
 WORKDIR /app
 

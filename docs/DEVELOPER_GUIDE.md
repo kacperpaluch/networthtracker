@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.1.1` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.1.2` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
@@ -91,7 +91,8 @@ frontendu ani drugiej aplikacji. Katalog `backend/` tworzyłby zbędny poziom.
 4. Uruchamia demona `cron`.
 5. Przekazuje PID 1 do Uvicorna przez `exec`.
 6. Import `app.main` tworzy brakujące tabele i wykonuje małą migrację SQLite.
-7. `seed_database()` uzupełnia wyłącznie całkowicie pustą bazę.
+7. `seed_database()` uzupełnia całkowicie pustą bazę tylko wtedy, gdy
+   `LOAD_DEMO_DATA=true`.
 
 ## Model danych
 
