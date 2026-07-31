@@ -85,12 +85,12 @@ class SettingsUpdate(BaseModel):
 
 class GoalCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    target_amount: float = Field(gt=0)
+    target_amount: float
     target_date: date | None = None
 
 
 class GoalUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    target_amount: float | None = Field(default=None, gt=0)
+    target_amount: float | None = None
     target_date: date | None = None
     completed: bool | None = None

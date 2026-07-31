@@ -10,6 +10,14 @@ from .models import AppSetting, ExchangeRate
 NBP_API = "https://api.nbp.pl/api/exchangerates/rates"
 
 
+def set_setting(db: Session, key: str, value: str) -> None:
+    setting = db.get(AppSetting, key)
+    if setting:
+        setting.value = value
+    else:
+        db.add(AppSetting(key=key, value=value))
+
+
 def rate_to_pln(
     currency: str, day: date, db: Session, *, force_refresh: bool = False
 ) -> tuple[float, date]:
@@ -18,23 +26,28 @@ def rate_to_pln(
     if code == "PLN":
         return 1.0, day
 
+    lookup_day = min(day, date.today())
     cached = (
         db.query(ExchangeRate)
         .filter(
             ExchangeRate.currency == code,
-            ExchangeRate.effective_date <= day,
+            ExchangeRate.effective_date <= lookup_day,
         )
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
+    checked_for_day = db.get(
+        AppSetting, f"fx_checked_{code}_{lookup_day.isoformat()}"
+    )
     if (
         cached
         and not force_refresh
-        and cached.effective_date >= day - timedelta(days=10)
+        and checked_for_day
+        and cached.effective_date >= lookup_day - timedelta(days=10)
     ):
         return cached.rate_to_pln, cached.effective_date
 
-    end = min(day, date.today())
+    end = lookup_day
     start = end - timedelta(days=10)
     for table in ("A", "B"):
         url = f"{NBP_API}/{table}/{code}/{start.isoformat()}/{end.isoformat()}/"
@@ -74,14 +87,16 @@ def rate_to_pln(
                     table=table,
                 )
             )
-        checked_key = f"fx_last_checked_{code}"
-        checked = db.get(AppSetting, checked_key)
-        checked_value = datetime.now(UTC).isoformat()
-        if checked:
-            checked.value = checked_value
-        else:
-            db.add(AppSetting(key=checked_key, value=checked_value))
+        set_setting(db, f"fx_last_checked_{code}", datetime.now(UTC).isoformat())
+        set_setting(
+            db,
+            f"fx_checked_{code}_{lookup_day.isoformat()}",
+            effective_date.isoformat(),
+        )
         return value, effective_date
+
+    if cached and cached.effective_date >= lookup_day - timedelta(days=10):
+        return cached.rate_to_pln, cached.effective_date
 
     raise HTTPException(
         503,

@@ -60,6 +60,7 @@ class Goal(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     target_amount: Mapped[float] = mapped_column(Float)
+    start_amount: Mapped[float] = mapped_column(Float, default=0)
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(

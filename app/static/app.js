@@ -224,7 +224,7 @@ function goalCard(goal) {
   return `<article class="goal-card ${goal.completed ? "completed" : ""}">
     <div class="goal-head"><span><strong>${esc(goal.name)}</strong><small>${goal.targetDate ? `Termin: ${dateLabel(goal.targetDate)}` : "Bez terminu"}</small></span><strong>${goal.progress}%</strong></div>
     <div class="goal-progress"><i style="width:${goal.progress}%"></i></div>
-    <div class="goal-foot"><span>${money.format(goal.currentAmount)}</span><span>cel: ${money.format(goal.targetAmount)}</span></div>
+    <div class="goal-foot"><span>start: ${money.format(goal.startAmount)} · teraz: ${money.format(goal.currentAmount)}</span><span>cel: ${money.format(goal.targetAmount)}</span></div>
     <div class="goal-actions"><button data-goal-complete="${goal.id}">${goal.completed ? "Przywróć" : "Oznacz jako osiągnięty"}</button><button class="danger-link" data-goal-delete="${goal.id}">Usuń</button></div>
   </article>`;
 }
@@ -274,7 +274,7 @@ function renderActivity() {
   main.innerHTML = `
     <div class="view-heading"><div><h1>Ostatnia aktywność</h1><p>Historia zapisanych snapshotów salda.</p></div></div>
     <section class="panel activity-list">${recent.map((item) => `
-      <div class="activity-item ${item.important ? "important-change" : ""}"><span class="activity-icon ${item.kind}">${item.important ? "★" : "↻"}</span><span><strong>${esc(item.account)}</strong><small>${esc(item.note || `Saldo z dnia ${dateLabel(item.date)}`)} · ${dateLabel(item.date)}${item.currency !== state.baseCurrency ? ` · ${nativeMoney(item.nativeAmount, item.currency)}` : ""}</small></span><strong>${money.format(item.amount)}</strong></div>`).join("")}</section>
+      <div class="activity-item ${item.important ? "important-change" : ""}"><span class="activity-icon ${item.kind}">${item.important ? "★" : "↻"}</span><span><strong>${esc(item.account)}</strong><small>${esc(item.note || `Saldo z dnia ${dateLabel(item.date)}`)} · snapshot ${dateLabel(item.date)}${item.currency !== state.baseCurrency ? ` · ${nativeMoney(item.nativeAmount, item.currency)}` : ""}</small>${item.currency !== "PLN" && item.rateDate ? `<small class="fx-detail">Kurs: 1 ${esc(item.currency)} = ${Number(item.rateToPln).toFixed(4)} PLN · tabela NBP z ${dateLabel(item.rateDate)}</small>` : ""}</span><strong>${money.format(item.amount)}</strong></div>`).join("")}</section>
     <section class="insight"><strong>✦ PODSUMOWANIE</strong><p>Wartość netto ${summary.change >= 0 ? "wzrosła" : "spadła"} o ${money.format(Math.abs(summary.change))} od ostatniej aktualizacji.</p></section>`;
 }
 

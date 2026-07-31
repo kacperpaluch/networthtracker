@@ -2,8 +2,10 @@ from collections import defaultdict
 from calendar import monthrange
 from datetime import date, timedelta
 import csv
+import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 
@@ -33,6 +35,12 @@ from .seed import seed_database
 
 
 APP_DIR = Path(__file__).resolve().parent
+STATIC_VERSION = hashlib.sha256(
+    b"".join(
+        (APP_DIR / "static" / filename).read_bytes()
+        for filename in ("app.js", "styles.css")
+    )
+).hexdigest()[:12]
 Path("./data").mkdir(parents=True, exist_ok=True)
 Base.metadata.create_all(bind=engine)
 
@@ -62,6 +70,16 @@ def migrate_sqlite_schema() -> None:
                 "WHERE rate_to_pln IS NULL OR rate_to_pln <= 0"
             )
         )
+        goal_columns = {
+            item["name"] for item in inspect(engine).get_columns("goals")
+        }
+        if "start_amount" not in goal_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE goals ADD COLUMN start_amount FLOAT "
+                    "NOT NULL DEFAULT 0.0"
+                )
+            )
         connection.execute(
             text(
                 "UPDATE snapshots SET rate_date = snapshot_date "
@@ -84,7 +102,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.1.2")
+app = FastAPI(title="Worthly", version="1.2.0")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -94,7 +112,7 @@ def index(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"app_version": app.version},
+        context={"app_version": app.version, "static_version": STATIC_VERSION},
     )
 
 
@@ -132,19 +150,35 @@ def goal_response(
     target = convert_from_pln(
         goal.target_amount, base_currency, date.today(), db
     )
+    start = convert_from_pln(
+        goal.start_amount, base_currency, date.today(), db
+    )
     return {
         "id": goal.id,
         "name": goal.name,
         "targetAmount": round(target, 2),
+        "startAmount": round(start, 2),
         "targetDate": goal.target_date.isoformat() if goal.target_date else None,
         "completed": goal.completed,
         "currentAmount": round(current_net, 2),
-        "progress": round(
-            max(0, min(100, current_net / target * 100)), 1
-        )
-        if target
-        else 0,
+        "progress": goal_progress(start, current_net, target),
     }
+
+
+def goal_progress(start: float, current: float, target: float) -> float:
+    distance = target - start
+    if distance == 0:
+        return 100.0
+    return round(max(0, min(100, (current - start) / distance * 100)), 1)
+
+
+def current_net_worth(db: Session, base_currency: str) -> float:
+    value = 0.0
+    accounts = db.query(Account).filter(Account.archived.is_(False)).all()
+    for account in accounts:
+        balance = account_response(account, db, base_currency).current_balance
+        value += balance if account.kind == "asset" else -balance
+    return value
 
 
 def account_response(
@@ -448,6 +482,8 @@ def dashboard(db: Session = Depends(get_db)):
                 "source": item.source,
                 "note": item.note,
                 "important": item.important,
+                "rateToPln": item.rate_to_pln,
+                "rateDate": item.rate_date.isoformat() if item.rate_date else None,
             }
             for item in recent
         ],
@@ -642,6 +678,7 @@ def create_goal(payload: GoalCreate, db: Session = Depends(get_db)):
     base_currency = get_setting(db, "base_currency", "PLN")
     rate, _ = rate_to_pln(base_currency, date.today(), db)
     values["target_amount"] *= rate
+    values["start_amount"] = current_net_worth(db, base_currency) * rate
     goal = Goal(**values)
     db.add(goal)
     db.commit()
@@ -900,12 +937,15 @@ def import_json(payload: dict, mode: str = "merge", db: Session = Depends(get_db
             goal = Goal(
                 name=name,
                 target_amount=float(item.get("target_amount", 0)),
+                start_amount=float(item.get("start_amount", 0)),
                 target_date=_parse_date(
                     item.get("target_date"), "target_date", optional=True
                 ),
                 completed=bool(item.get("completed", False)),
             )
-            if goal.target_amount > 0:
+            if math.isfinite(goal.target_amount) and math.isfinite(
+                goal.start_amount
+            ):
                 db.add(goal)
                 existing_goals[name.casefold()] = goal
         db.commit()

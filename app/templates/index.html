@@ -9,7 +9,7 @@
     <meta property="og:image" content="/static/og.png">
     <title>Worthly — prywatny tracker wartości netto</title>
     <link rel="icon" href="/static/favicon.svg">
-    <link rel="stylesheet" href="/static/styles.css?v={{ app_version }}">
+    <link rel="stylesheet" href="/static/styles.css?v={{ static_version }}">
   </head>
   <body>
     <div class="app-shell">
@@ -256,7 +256,7 @@
         </header>
         <form id="goalForm" class="form">
           <label>Nazwa celu<input name="name" required maxlength="120" placeholder="np. Wartość netto 500 000 zł"></label>
-          <label>Kwota docelowa<div class="money-input"><input name="target_amount" required type="number" min="0.01" step="0.01"><span id="goalCurrency">PLN</span></div></label>
+          <label>Docelowa wartość netto<div class="money-input"><input name="target_amount" required type="number" step="0.01"><span id="goalCurrency">PLN</span></div></label>
           <label>Termin <small>(opcjonalnie)</small><input name="target_date" type="date"></label>
           <footer class="form-actions"><button type="button" class="button secondary close-modal">Anuluj</button><button class="button primary">Dodaj cel</button></footer>
         </form>
@@ -265,6 +265,6 @@
 
     <div class="toast" id="toast" hidden></div>
     <script>window.WORTHLY_VERSION = "{{ app_version }}";</script>
-    <script src="/static/app.js?v={{ app_version }}" defer></script>
+    <script src="/static/app.js?v={{ static_version }}" defer></script>
   </body>
 </html>

@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = "sqlite:///./data/test.db"
@@ -9,6 +10,11 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.main import env_flag
+from app.main import goal_progress
+from app.main import STATIC_VERSION
+from app.database import SessionLocal
+from app.fx import rate_to_pln
+from app.models import AppSetting, ExchangeRate
 
 
 client = TestClient(app)
@@ -64,7 +70,9 @@ def test_single_server_renders_interface():
     response = client.get("/")
     assert response.status_code == 200
     assert "Worthly" in response.text
-    assert "/static/app.js" in response.text
+    assert f"/static/app.js?v={STATIC_VERSION}" in response.text
+    assert f"/static/styles.css?v={STATIC_VERSION}" in response.text
+    assert f'window.WORTHLY_VERSION = "{app.version}"' in response.text
 
 
 def test_settings_and_exports():
@@ -271,6 +279,36 @@ def test_financial_goal_lifecycle():
     assert client.delete(f"/api/goals/{goal_id}").status_code == 204
 
 
+def test_negative_net_worth_goal_uses_creation_value_as_start():
+    current_net = client.get("/api/dashboard").json()["summary"]["netWorth"]
+    created = client.post(
+        "/api/goals",
+        json={
+            "name": "Wyjście z zadłużenia",
+            "target_amount": -40000,
+            "target_date": "2026-12-31",
+        },
+    )
+    assert created.status_code == 201
+    goal = next(
+        item
+        for item in client.get("/api/goals").json()
+        if item["id"] == created.json()["id"]
+    )
+    assert goal["targetAmount"] == -40000
+    assert goal["startAmount"] == current_net
+    assert goal["progress"] == 0
+    exported_goal = next(
+        item
+        for item in client.get("/api/export/json").json()["goals"]
+        if item["id"] == created.json()["id"]
+    )
+    assert exported_goal["target_amount"] == -40000
+    assert exported_goal["start_amount"] == current_net
+    assert goal_progress(-50000, -45000, -40000) == 50
+    assert goal_progress(-50000, -40000, -40000) == 100
+
+
 def test_annual_report_and_year_over_year():
     response = client.get("/api/reports/annual?year=2026")
     assert response.status_code == 200
@@ -307,6 +345,60 @@ def test_foreign_currency_uses_rate_saved_with_snapshot(monkeypatch):
         f"/api/accounts/{created.json()['id']}/snapshots"
     ).json()
     assert snapshots[0]["rate_to_pln"] == 4.0
+    recent = client.get("/api/dashboard").json()["recent"]
+    activity = next(item for item in recent if item["account"] == "Konto USD")
+    assert activity["rateToPln"] == 4.0
+    assert activity["rateDate"] == snapshots[0]["rate_date"]
+
+
+def test_weekend_snapshot_uses_friday_nbp_rate_and_checks_once(monkeypatch):
+    weekend = date(2026, 7, 26)
+    friday = date(2026, 7, 24)
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        is_error = False
+
+        @staticmethod
+        def json():
+            return {
+                "rates": [
+                    {"effectiveDate": friday.isoformat(), "mid": 2.75}
+                ]
+            }
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr("app.fx.httpx.get", fake_get)
+    with SessionLocal() as db:
+        db.query(ExchangeRate).filter(ExchangeRate.currency == "CAD").delete()
+        (
+            db.query(AppSetting)
+            .filter(AppSetting.key.like("%CAD%"))
+            .delete(synchronize_session=False)
+        )
+        db.add(
+            ExchangeRate(
+                currency="CAD",
+                effective_date=date(2026, 7, 22),
+                rate_to_pln=2.7,
+                table="A",
+            )
+        )
+        db.commit()
+
+        rate, rate_date = rate_to_pln("CAD", weekend, db)
+        assert rate == 2.75
+        assert rate_date == friday
+        assert len(calls) == 1
+        db.commit()
+
+        cached_rate, cached_date = rate_to_pln("CAD", weekend, db)
+        assert (cached_rate, cached_date) == (2.75, friday)
+        assert len(calls) == 1
 
 
 def test_important_snapshot_note_is_exposed_in_activity():

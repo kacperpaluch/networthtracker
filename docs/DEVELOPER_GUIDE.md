@@ -122,9 +122,10 @@ frontendu ani drugiej aplikacji. Katalog `backend/` tworzyłby zbędny poziom.
 | `rate_date` | data notowania |
 | `source` | `manual`, `seed` albo `import` |
 
-`AppSetting` przechowuje walutę bazową i format dat. `Goal` przechowuje cel
-wartości netto, a jego kwota jest normalizowana do PLN. `ExchangeRate` jest
-lokalnym cache NBP z unikalną parą waluta–data.
+`AppSetting` przechowuje walutę bazową i format dat. `Goal` przechowuje docelową
+wartość netto oraz `start_amount` z chwili utworzenia celu; obie kwoty są
+normalizowane do PLN. Dzięki temu postęp działa również między wartościami
+ujemnymi. `ExchangeRate` jest lokalnym cache NBP z unikalną parą waluta–data.
 
 ## Reguły finansowe
 
@@ -175,6 +176,7 @@ historycznego wyniku.
 | `GET` | `/api/reports/monthly?month=RRRR-MM` | raport miesięczny |
 | `GET` | `/api/reports/annual?year=RRRR` | raport roczny |
 | `GET/PATCH` | `/api/settings` | preferencje |
+| `POST` | `/api/exchange-rates/refresh` | pobranie najnowszych tabel NBP |
 | `GET/POST` | `/api/goals` | lista i nowy cel |
 | `PATCH/DELETE` | `/api/goals/{id}` | zmiana lub usunięcie celu |
 | `GET` | `/api/export/json` | pełna kopia logiczna |

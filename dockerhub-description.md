@@ -6,12 +6,12 @@ bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 
 ## Funkcje
 
-- aktywa, zobowiązania i archiwizacja kont;
-- snapshoty z historią, wykresami i notatkami;
+- aktywa i zobowiązania z edycją waluty, archiwizacją i usuwaniem kont;
+- snapshoty z historią, wykresami, notatkami oraz kursem i datą tabeli NBP;
 - raporty miesięczne i roczne oraz porównania r/r;
-- cele finansowe;
+- cele finansowe liczone od wartości początkowej, także dla ujemnej wartości netto;
 - aktywa vs zobowiązania i udziały procentowe;
-- PLN, EUR, USD, GBP i CHF z historycznymi kursami NBP;
+- PLN, EUR, USD, GBP i CHF z historycznymi kursami NBP oraz poprawną obsługą weekendów i świąt;
 - eksport/import JSON i eksport CSV;
 - cron backupujący SQLite do folderu hosta.
 

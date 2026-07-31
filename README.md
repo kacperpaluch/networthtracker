@@ -15,7 +15,7 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - historia konta z wykresem oraz korektą i usuwaniem wpisów;
 - dashboard wartości netto, aktywów, zadłużenia i alokacji;
 - raport miesięczny, raport roczny i porównania rok do roku;
-- cele finansowe z terminem i paskiem postępu;
+- cele finansowe z terminem i postępem liczonym od wartości netto w chwili utworzenia, także dla wartości ujemnych;
 - konta w PLN, EUR, USD, GBP i CHF;
 - historyczne kursy średnie z NBP zapisywane przy snapshotach;
 - widoczna data ostatnich tabel NBP i ręczne pobranie najnowszych kursów;
@@ -120,7 +120,7 @@ Kwota snapshotu pozostaje w walucie konta. Dla obcej waluty aplikacja pobiera
 ostatni kurs średni NBP dostępny dla wskazanej daty i zapisuje go lokalnie.
 Weekend lub święto korzysta z ostatniego wcześniejszego notowania. Zmiana
 waluty bazowej wpływa na prezentację i raporty, ale nie zmienia oryginalnych
-kwot.
+kwot. Aktywność pokazuje kurs oraz datę tabeli NBP użyte dla każdego snapshotu.
 
 Pierwszy zapis wartości w obcej walucie wymaga dostępu kontenera do
 `https://api.nbp.pl`.
