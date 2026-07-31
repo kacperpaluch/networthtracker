@@ -134,6 +134,10 @@
             <label>Instytucja<input name="institution" maxlength="120"></label>
             <label>Kategoria<select name="category" id="editCategorySelect"></select></label>
           </div>
+          <label>Waluta konta
+            <select name="currency"><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select>
+            <small>Zmiana waluty przeliczy kursy wszystkich zapisanych snapshotów. Kwoty pozostaną bez zmian i będą traktowane jako wartości w nowej walucie.</small>
+          </label>
           <label>Częstotliwość aktualizacji
             <select name="update_frequency">
               <option value="weekly">Co tydzień</option>
@@ -143,7 +147,10 @@
             </select>
           </label>
           <footer class="form-actions split-actions">
-            <button type="button" class="button danger" id="archiveAccountButton">Archiwizuj konto</button>
+            <div class="account-danger-actions">
+              <button type="button" class="button danger" id="archiveAccountButton">Archiwizuj konto</button>
+              <button type="button" class="button danger" id="deleteAccountButton">Usuń konto</button>
+            </div>
             <span class="action-spacer"></span>
             <button type="button" class="button secondary close-modal">Anuluj</button>
             <button class="button primary">Zapisz zmiany</button>
@@ -200,6 +207,7 @@
               <button class="button primary">Zapisz preferencje</button>
             </form>
             <p class="settings-help">Konta mogą mieć różne waluty. Wartości historyczne przeliczane są po zapisanym kursie średnim NBP.</p>
+            <div class="setting-row"><div><strong>Kursy walut NBP</strong><small id="exchangeRatesDescription">Sprawdzanie danych…</small></div><button type="button" class="button secondary" id="refreshExchangeRates">Pobierz najnowsze</button></div>
             <div class="setting-row"><div><strong>Przechowywanie danych</strong><small>Pojedynczy lokalny plik w wolumenie Dockera</small></div><span class="setting-value">SQLite</span></div>
             <div class="setting-row"><div><strong>Automatyczny backup</strong><small>Codziennie o 03:00 · retencja 7 dni</small></div><span class="setting-value">./backups</span></div>
           </section>

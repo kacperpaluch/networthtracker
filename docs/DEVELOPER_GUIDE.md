@@ -168,7 +168,8 @@ historycznego wyniku.
 | `GET` | `/api/health` | healthcheck |
 | `GET` | `/api/dashboard` | agregaty i dane widoków |
 | `GET/POST` | `/api/accounts` | lista i nowe konto |
-| `PATCH` | `/api/accounts/{id}` | edycja lub archiwizacja |
+| `PATCH` | `/api/accounts/{id}` | edycja, zmiana waluty lub archiwizacja |
+| `DELETE` | `/api/accounts/{id}` | trwałe usunięcie konta i snapshotów |
 | `GET/POST` | `/api/accounts/{id}/snapshots` | historia i nowy snapshot |
 | `PATCH/DELETE` | `/api/snapshots/{id}` | korekta lub usunięcie |
 | `GET` | `/api/reports/monthly?month=RRRR-MM` | raport miesięczny |

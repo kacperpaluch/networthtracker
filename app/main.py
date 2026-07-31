@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine, get_db
 from .fx import convert_from_pln, rate_to_pln
-from .models import Account, AppSetting, Goal, Snapshot
+from .models import Account, AppSetting, ExchangeRate, Goal, Snapshot
 from .schemas import (
     AccountCreate,
     AccountOut,
@@ -171,6 +171,40 @@ def account_response(
     )
 
 
+def exchange_rate_status(db: Session, accounts: list[Account] | None = None) -> dict:
+    """Describe the NBP rates currently available to the application."""
+    accounts = accounts if accounts is not None else db.query(Account).all()
+    base_currency = get_setting(db, "base_currency", "PLN")
+    currencies = {account.currency for account in accounts if account.currency != "PLN"}
+    if base_currency != "PLN":
+        currencies.add(base_currency)
+
+    items = []
+    for currency in sorted(currencies):
+        latest = (
+            db.query(ExchangeRate)
+            .filter(ExchangeRate.currency == currency)
+            .order_by(ExchangeRate.effective_date.desc())
+            .first()
+        )
+        checked = db.get(AppSetting, f"fx_last_checked_{currency}")
+        items.append(
+            {
+                "currency": currency,
+                "effectiveDate": latest.effective_date.isoformat() if latest else None,
+                "checkedAt": checked.value if checked else None,
+            }
+        )
+
+    dated = [item["effectiveDate"] for item in items if item["effectiveDate"]]
+    return {
+        "provider": "NBP",
+        "mode": "on_demand",
+        "currencies": items,
+        "effectiveDate": min(dated) if dated else None,
+    }
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -218,6 +252,15 @@ def update_account(account_id: int, payload: AccountUpdate, db: Session = Depend
     db.commit()
     db.refresh(account)
     return account_response(account, db)
+
+
+@app.delete("/api/accounts/{account_id}", status_code=204)
+def delete_account(account_id: int, db: Session = Depends(get_db)):
+    account = db.get(Account, account_id)
+    if not account:
+        raise HTTPException(404, "Nie znaleziono konta")
+    db.delete(account)
+    db.commit()
 
 
 @app.get("/api/accounts/{account_id}/snapshots", response_model=list[SnapshotOut])
@@ -388,6 +431,7 @@ def dashboard(db: Session = Depends(get_db)):
             "updatedAt": max((item.snapshot_date for item in snapshots), default=date.today()).isoformat(),
             "baseCurrency": base_currency,
             "dateFormat": date_format,
+            "exchangeRates": exchange_rate_status(db, accounts),
         },
         "timeline": timeline,
         "allocation": allocation,
@@ -555,6 +599,7 @@ def settings_info(db: Session = Depends(get_db)):
         "storage": "SQLite",
         "accounts": db.query(Account).count(),
         "snapshots": db.query(Snapshot).count(),
+        "exchangeRates": exchange_rate_status(db),
     }
 
 
@@ -566,6 +611,24 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)):
     set_setting(db, "date_format", payload.date_format)
     db.commit()
     return settings_info(db)
+
+
+@app.post("/api/exchange-rates/refresh")
+def refresh_exchange_rates(db: Session = Depends(get_db)):
+    base_currency = get_setting(db, "base_currency", "PLN")
+    currencies = {
+        value[0]
+        for value in db.query(Account.currency)
+        .filter(Account.currency != "PLN")
+        .distinct()
+        .all()
+    }
+    if base_currency != "PLN":
+        currencies.add(base_currency)
+    for currency in sorted(currencies):
+        rate_to_pln(currency, date.today(), db, force_refresh=True)
+    db.commit()
+    return exchange_rate_status(db)
 
 
 @app.get("/api/goals")

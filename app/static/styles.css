@@ -522,6 +522,7 @@ button { cursor: pointer; }
 .form, .form label { display: flex; flex-direction: column; }
 .form { gap: 15px; }
 .form label { color: #4b544f; font-size: 10px; font-weight: 700; gap: 7px; }
+.form label > small { color: var(--muted); font-size: 8px; font-weight: 500; line-height: 1.45; }
 .form input, .form select {
   background: #fbfbf9;
   border: 1px solid #dcddd7;
@@ -544,6 +545,7 @@ button { cursor: pointer; }
 .form-actions { border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; margin-top: 5px; padding-top: 17px; }
 .form-actions.split-actions { align-items: center; }
 .action-spacer { flex: 1; }
+.account-danger-actions { display: flex; gap: 8px; }
 .button.danger { background: white; border: 1px solid #e5bdb5; color: var(--red); }
 .button.danger:hover { background: var(--red-soft); }
 .button.danger.restore { border-color: #bfd4ca; color: var(--green); }

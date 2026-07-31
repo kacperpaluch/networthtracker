@@ -140,6 +140,78 @@ def test_edit_archive_and_restore_account():
     assert restored.json()["archived"] is False
 
 
+def test_change_account_currency_recalculates_snapshot_rates(monkeypatch):
+    monkeypatch.setattr(
+        "app.main.rate_to_pln",
+        lambda currency, day, db, **kwargs: (4.25, day),
+    )
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto z błędną walutą",
+            "kind": "asset",
+            "category": "Gotówka",
+            "currency": "PLN",
+            "opening_balance": 100,
+        },
+    ).json()
+
+    changed = client.patch(
+        f"/api/accounts/{account['id']}", json={"currency": "eur"}
+    )
+    assert changed.status_code == 200
+    assert changed.json()["currency"] == "EUR"
+    snapshots = client.get(
+        f"/api/accounts/{account['id']}/snapshots"
+    ).json()
+    assert snapshots[0]["amount"] == 100
+    assert snapshots[0]["rate_to_pln"] == 4.25
+
+
+def test_delete_account_also_deletes_its_snapshots():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto do usunięcia",
+            "kind": "asset",
+            "category": "Inne",
+            "opening_balance": 10,
+        },
+    ).json()
+    snapshot_id = client.get(
+        f"/api/accounts/{account['id']}/snapshots"
+    ).json()[0]["id"]
+
+    deleted = client.delete(f"/api/accounts/{account['id']}")
+    assert deleted.status_code == 204
+    assert client.get(f"/api/accounts/{account['id']}/snapshots").status_code == 404
+    assert client.patch(f"/api/snapshots/{snapshot_id}", json={"amount": 20}).status_code == 404
+
+
+def test_manual_exchange_rate_refresh_uses_current_nbp_rate(monkeypatch):
+    calls = []
+
+    def fake_rate(currency, day, db, **kwargs):
+        calls.append((currency, day, kwargs.get("force_refresh")))
+        return 4.25, day
+
+    monkeypatch.setattr("app.main.rate_to_pln", fake_rate)
+    client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto EUR do odświeżenia",
+            "kind": "asset",
+            "category": "Gotówka",
+            "currency": "EUR",
+            "opening_balance": 1,
+        },
+    )
+    calls.clear()
+    response = client.post("/api/exchange-rates/refresh")
+    assert response.status_code == 200
+    assert any(currency == "EUR" and forced is True for currency, _, forced in calls)
+
+
 def test_edit_and_delete_snapshot():
     account = client.post(
         "/api/accounts",

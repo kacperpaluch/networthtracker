@@ -1,16 +1,18 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from .models import ExchangeRate
+from .models import AppSetting, ExchangeRate
 
 
 NBP_API = "https://api.nbp.pl/api/exchangerates/rates"
 
 
-def rate_to_pln(currency: str, day: date, db: Session) -> tuple[float, date]:
+def rate_to_pln(
+    currency: str, day: date, db: Session, *, force_refresh: bool = False
+) -> tuple[float, date]:
     """Return and cache the last NBP fixing available on or before ``day``."""
     code = currency.upper()
     if code == "PLN":
@@ -25,7 +27,11 @@ def rate_to_pln(currency: str, day: date, db: Session) -> tuple[float, date]:
         .order_by(ExchangeRate.effective_date.desc())
         .first()
     )
-    if cached and cached.effective_date >= day - timedelta(days=10):
+    if (
+        cached
+        and not force_refresh
+        and cached.effective_date >= day - timedelta(days=10)
+    ):
         return cached.rate_to_pln, cached.effective_date
 
     end = min(day, date.today())
@@ -68,6 +74,13 @@ def rate_to_pln(currency: str, day: date, db: Session) -> tuple[float, date]:
                     table=table,
                 )
             )
+        checked_key = f"fx_last_checked_{code}"
+        checked = db.get(AppSetting, checked_key)
+        checked_value = datetime.now(UTC).isoformat()
+        if checked:
+            checked.value = checked_value
+        else:
+            db.add(AppSetting(key=checked_key, value=checked_value))
         return value, effective_date
 
     raise HTTPException(

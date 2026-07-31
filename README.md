@@ -8,7 +8,7 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 
 ## Najważniejsze funkcje
 
-- konta aktywów i zobowiązań z archiwizacją;
+- konta aktywów i zobowiązań z edycją waluty, archiwizacją i usuwaniem;
 - osobny harmonogram aktualizacji każdego konta;
 - przypomnienia i oznaczenia nieaktualnych kont;
 - snapshoty salda z datą, notatką i wyróżnieniem istotnej zmiany;
@@ -18,6 +18,7 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - cele finansowe z terminem i paskiem postępu;
 - konta w PLN, EUR, USD, GBP i CHF;
 - historyczne kursy średnie z NBP zapisywane przy snapshotach;
+- widoczna data ostatnich tabel NBP i ręczne pobranie najnowszych kursów;
 - ustawienia waluty bazowej i formatu dat;
 - eksport i import JSON oraz eksport historii do CSV;
 - automatyczne kopie SQLite przez cron.

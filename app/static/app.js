@@ -54,6 +54,13 @@ function nativeMoney(value, currency) {
 function monthLabel(value) {
   return shortMonthFormatter.format(dateValue(value));
 }
+function exchangeRateDescription(status) {
+  if (!status?.currencies?.length) return "Nie dotyczy — wszystkie wartości są w PLN.";
+  const rates = status.currencies.map((item) =>
+    `${item.currency}: ${item.effectiveDate ? dateLabel(item.effectiveDate) : "brak kursu"}`
+  ).join(" · ");
+  return `Kurs jest pobierany z NBP przy zapisie snapshotu i pozostaje przypisany do jego daty. Ostatnie tabele w lokalnej bazie: ${rates}. Ręczne pobranie nie zmienia kursów historycznych snapshotów.`;
+}
 function esc(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -112,7 +119,10 @@ async function loadDashboard() {
     state.allAccounts = null;
     $("#errorBanner").hidden = true;
     $("#accountCount").textContent = state.dashboard.accounts.length;
-    $("#lastUpdated").textContent = `Ostatnia aktualizacja: ${dateLabel(state.dashboard.summary.updatedAt)}`;
+    const fx = state.dashboard.summary.exchangeRates;
+    $("#lastUpdated").textContent = fx?.currencies?.length
+      ? `Salda: ${dateLabel(state.dashboard.summary.updatedAt)} · tabela NBP w bazie: ${fx.effectiveDate ? dateLabel(fx.effectiveDate) : "brak danych"}`
+      : `Salda: ${dateLabel(state.dashboard.summary.updatedAt)} · kursy walut: nie dotyczy`;
     if (!state.selectedMonth) {
       state.selectedMonth = state.dashboard.timeline.at(-1)?.date.slice(0, 7) || new Date().toISOString().slice(0, 7);
     }
@@ -533,6 +543,7 @@ function openEditAccount(accountId) {
   form.elements.account_id.value = account.id;
   form.elements.name.value = account.name;
   form.elements.institution.value = account.institution;
+  form.elements.currency.value = account.currency;
   form.elements.update_frequency.value = account.update_frequency;
   const categories = account.kind === "asset"
     ? ["Gotówka", "Oszczędności", "Inwestycje", "Nieruchomości", "Inne"]
@@ -570,6 +581,7 @@ async function openSettings() {
     $("#settingsVersion").textContent = settings.version;
     $("#settingsForm").elements.base_currency.value = settings.baseCurrency;
     $("#settingsForm").elements.date_format.value = settings.dateFormat;
+    $("#exchangeRatesDescription").textContent = exchangeRateDescription(settings.exchangeRates);
   } catch {
     $("#settingsVersion").textContent = window.WORTHLY_VERSION || "—";
   }
@@ -754,10 +766,27 @@ $("#editAccountForm").addEventListener("submit", async (event) => {
         name: form.get("name"),
         institution: form.get("institution"),
         category: form.get("category"),
+        currency: form.get("currency"),
         update_frequency: form.get("update_frequency"),
       }),
     });
     closeModals(); await loadDashboard(); showToast("Dane konta zostały zapisane.");
+  } catch (error) {
+    showToast(error.message);
+  } finally { button.disabled = false; }
+});
+$("#deleteAccountButton").addEventListener("click", async () => {
+  const account = state.selectedAccount;
+  if (!account) return;
+  if (!window.confirm(`Usunąć konto „${account.name}” wraz z całą historią snapshotów? Tej operacji nie można cofnąć.`)) return;
+  const button = $("#deleteAccountButton");
+  button.disabled = true;
+  try {
+    await api(`/accounts/${account.id}`, { method: "DELETE" });
+    closeModals();
+    await loadDashboard();
+    if (state.view === "accounts") renderAccounts();
+    showToast("Konto i jego historia zostały usunięte.");
   } catch (error) {
     showToast(error.message);
   } finally { button.disabled = false; }
@@ -778,6 +807,22 @@ $("#archiveAccountButton").addEventListener("click", async () => {
   } catch (error) {
     showToast(error.message);
   } finally { button.disabled = false; }
+});
+$("#refreshExchangeRates").addEventListener("click", async () => {
+  const button = $("#refreshExchangeRates");
+  button.disabled = true;
+  button.textContent = "Odświeżanie…";
+  try {
+    const status = await api("/exchange-rates/refresh", { method: "POST" });
+    $("#exchangeRatesDescription").textContent = exchangeRateDescription(status);
+    await loadDashboard();
+    showToast(status.currencies.length ? "Kursy NBP zostały odświeżone." : "Brak walut wymagających kursu NBP.");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Pobierz najnowsze";
+  }
 });
 $("#snapshotForm").addEventListener("submit", async (event) => {
   event.preventDefault();
