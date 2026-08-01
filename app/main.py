@@ -103,7 +103,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.3.0")
+app = FastAPI(title="Worthly", version="1.3.1")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -357,11 +357,21 @@ def recalculate_next_update(account: Account, db: Session):
 def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
     """Idempotently import dated balances from Actual Budget or another source."""
     active_accounts: dict[str, list[Account]] = defaultdict(list)
+    tracking_starts: dict[int, date] = {}
     for account in db.query(Account).filter(Account.archived.is_(False)).all():
         active_accounts[account.name.casefold()].append(account)
+        first_snapshot = (
+            db.query(Snapshot)
+            .filter(Snapshot.account_id == account.id)
+            .order_by(Snapshot.id)
+            .first()
+        )
+        if first_snapshot:
+            tracking_starts[account.id] = first_snapshot.snapshot_date
 
-    created = updated = unchanged = 0
+    created = updated = unchanged = skipped = 0
     synced = []
+    ignored = []
     errors = []
     touched_accounts: dict[int, Account] = {}
 
@@ -407,6 +417,19 @@ def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
             )
             continue
 
+        tracking_start = tracking_starts.get(account.id)
+        if tracking_start and item.date < tracking_start:
+            skipped += 1
+            ignored.append(
+                {
+                    **result_key,
+                    "currency": input_currency,
+                    "reason": "before_tracking_start",
+                    "tracking_start_date": tracking_start.isoformat(),
+                }
+            )
+            continue
+
         snapshot = (
             db.query(Snapshot)
             .filter(
@@ -433,7 +456,6 @@ def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
             action = "unchanged"
         else:
             snapshot.amount = item.value
-            snapshot.source = "actual-budget"
             updated += 1
             action = "updated"
 
@@ -450,7 +472,9 @@ def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
         "created": created,
         "updated": updated,
         "unchanged": unchanged,
+        "skipped": skipped,
         "synced": synced,
+        "ignored": ignored,
         "errors": errors,
     }
 

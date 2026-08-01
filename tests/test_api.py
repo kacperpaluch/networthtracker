@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = "sqlite:///./data/test.db"
@@ -67,9 +67,10 @@ def test_sync_api_creates_updates_and_skips_unchanged_balances():
             "opening_balance": 1000,
         },
     ).json()
+    sync_date = date.fromisoformat(account["last_updated"]) + timedelta(days=1)
     payload = [
         {
-            "date": "2026-07-26",
+            "date": sync_date.isoformat(),
             "account_name": "konto SYNCHRONIZOWANE",
             "value": 1200.5,
             "currency": "pln",
@@ -101,11 +102,83 @@ def test_sync_api_creates_updates_and_skips_unchanged_balances():
         for item in client.get(
             f"/api/accounts/{account['id']}/snapshots"
         ).json()
-        if item["snapshot_date"] == "2026-07-26"
+        if item["snapshot_date"] == sync_date.isoformat()
     ]
     assert len(dated) == 1
     assert dated[0]["amount"] == 1250.75
     assert dated[0]["source"] == "actual-budget"
+
+
+def test_sync_api_skips_dates_before_first_snapshot():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto z granicą synchronizacji",
+            "kind": "asset",
+            "category": "Gotówka",
+            "opening_balance": 100,
+        },
+    ).json()
+    tracking_start = date.fromisoformat(account["last_updated"])
+    before_start = tracking_start - timedelta(days=1)
+
+    response = client.post(
+        "/api/sync",
+        json=[
+            {
+                "date": before_start.isoformat(),
+                "account_name": account["name"],
+                "value": 50,
+                "currency": "PLN",
+            }
+        ],
+    )
+    assert response.status_code == 200
+    assert response.json()["created"] == 0
+    assert response.json()["skipped"] == 1
+    assert response.json()["ignored"] == [
+        {
+            "date": before_start.isoformat(),
+            "account_name": account["name"],
+            "currency": "PLN",
+            "reason": "before_tracking_start",
+            "tracking_start_date": tracking_start.isoformat(),
+        }
+    ]
+    snapshots = client.get(
+        f"/api/accounts/{account['id']}/snapshots"
+    ).json()
+    assert all(item["snapshot_date"] != before_start.isoformat() for item in snapshots)
+
+
+def test_sync_api_preserves_source_of_existing_manual_snapshot():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto z ręcznym początkiem",
+            "kind": "asset",
+            "category": "Gotówka",
+            "opening_balance": 100,
+        },
+    ).json()
+    response = client.post(
+        "/api/sync",
+        json=[
+            {
+                "date": account["last_updated"],
+                "account_name": account["name"],
+                "value": 125,
+                "currency": "PLN",
+            }
+        ],
+    )
+    assert response.status_code == 200
+    assert response.json()["updated"] == 1
+    snapshots = client.get(
+        f"/api/accounts/{account['id']}/snapshots"
+    ).json()
+    assert snapshots[0]["amount"] == 125
+    assert snapshots[0]["source"] == "manual"
 
 
 def test_sync_api_reports_unknown_accounts_without_rejecting_batch():
@@ -126,7 +199,7 @@ def test_sync_api_reports_unknown_accounts_without_rejecting_batch():
 
 
 def test_sync_api_rejects_value_in_wrong_currency():
-    client.post(
+    account = client.post(
         "/api/accounts",
         json={
             "name": "Konto tylko PLN",
@@ -135,12 +208,12 @@ def test_sync_api_rejects_value_in_wrong_currency():
             "currency": "PLN",
             "opening_balance": 100,
         },
-    )
+    ).json()
     response = client.post(
         "/api/sync",
         json=[
             {
-                "date": "2026-07-26",
+                "date": account["last_updated"],
                 "account_name": "Konto tylko PLN",
                 "value": 25,
                 "currency": "USD",

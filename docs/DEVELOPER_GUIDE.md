@@ -204,8 +204,15 @@ jako `unchanged`, a brakujący snapshot tworzony ze źródłem `actual-budget`.
 Nowy wpis walutowy zapisuje historyczny kurs NBP zgodnie ze zwykłym mechanizmem
 snapshotów. Po paczce przeliczane jest `next_update` każdego dotkniętego konta.
 
-Odpowiedź zawiera liczniki `created`, `updated`, `unchanged`, listę `synced`
-z akcją każdego poprawnego elementu oraz listę `errors`.
+Datą rozpoczęcia synchronizacji konta jest data jego pierwszego utworzonego
+snapshotu, rozpoznawanego po najniższym ID. Wpisy wcześniejsze nie są błędami:
+zwiększają licznik `skipped` i trafiają do `ignored` z powodem
+`before_tracking_start`. Siedmiodniowe okno n8n może dzięki temu pozostać stałe
+bez dopisywania historii sprzed rozpoczęcia śledzenia. Aktualizacja istniejącego
+snapshotu zachowuje jego pierwotne pole `source`.
+
+Odpowiedź zawiera liczniki `created`, `updated`, `unchanged`, `skipped`, listę
+`synced` z akcją każdego zapisanego elementu, listę `ignored` i listę `errors`.
 
 Dla budżetu Actual prowadzonego w PLN zalecamy ustawić walutę wszystkich
 synchronizowanych kont Worthly na `PLN`, także kont pomocniczych nazwanych `USD`

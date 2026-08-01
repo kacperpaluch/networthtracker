@@ -148,6 +148,7 @@ Synchronizacja jest idempotentna dla pary `konto + data`:
 - brak snapshotu tworzy nowy wpis ze źródłem `actual-budget`;
 - zmienione saldo aktualizuje istniejący wpis;
 - identyczne saldo pozostaje bez zmian;
+- data wcześniejsza niż pierwszy utworzony snapshot konta jest pomijana;
 - brakujące, zarchiwizowane lub niejednoznaczne konto trafia do `errors` i nie
   zatrzymuje pozostałych elementów paczki.
 
@@ -158,6 +159,7 @@ Przykładowa odpowiedź:
   "created": 1,
   "updated": 2,
   "unchanged": 4,
+  "skipped": 1,
   "synced": [
     {
       "date": "2026-07-26",
@@ -166,13 +168,24 @@ Przykładowa odpowiedź:
       "action": "updated"
     }
   ],
+  "ignored": [
+    {
+      "date": "2026-07-25",
+      "account_name": "PKO Konsolidacja",
+      "currency": "PLN",
+      "reason": "before_tracking_start",
+      "tracking_start_date": "2026-07-26"
+    }
+  ],
   "errors": []
 }
 ```
 
 Workflow może codziennie przesyłać ponownie np. siedem ostatnich dni. Dzięki
 upsertowi transakcja dodana z opóźnieniem do Actual Budget skoryguje historię,
-a niezmienione salda nie utworzą duplikatów. `value` musi być nieujemną kwotą
+a niezmienione salda nie utworzą duplikatów. Granicą historii jest data
+pierwszego snapshotu utworzonego dla konta (snapshot o najniższym ID), więc
+synchronizacja nie dopisze sald sprzed rozpoczęcia śledzenia. `value` musi być nieujemną kwotą
 w natywnej walucie konta Worthly. Opcjonalne pole `currency` jest porównywane
 z walutą konta i chroni przed zapisaniem salda PLN jako liczby EUR lub USD.
 Jeśli pole zostanie pominięte, API zakłada natywną walutę konta dla zgodności
