@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.1.2` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.4.0` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
@@ -120,7 +120,7 @@ frontendu ani drugiej aplikacji. Katalog `backend/` tworzyłby zbędny poziom.
 | `important` | wyróżnienie istotnej zmiany |
 | `rate_to_pln` | zapisany kurs jednostki waluty konta do PLN |
 | `rate_date` | data notowania |
-| `source` | `manual`, `seed` albo `import` |
+| `source` | `manual`, `actual-budget`, `seed` albo `import` |
 
 `AppSetting` przechowuje walutę bazową i format dat. `Goal` przechowuje docelową
 wartość netto oraz `start_amount` z chwili utworzenia celu; obie kwoty są
@@ -168,6 +168,7 @@ historycznego wyniku.
 | --- | --- | --- |
 | `GET` | `/api/health` | healthcheck |
 | `GET` | `/api/dashboard` | agregaty i dane widoków |
+| `GET` | `/api/activity` | filtrowana i stronicowana historia snapshotów |
 | `GET/POST` | `/api/accounts` | lista i nowe konto |
 | `PATCH` | `/api/accounts/{id}` | edycja, zmiana lub konwersja waluty, archiwizacja |
 | `DELETE` | `/api/accounts/{id}` | trwałe usunięcie konta i snapshotów |
@@ -186,6 +187,21 @@ historycznego wyniku.
 | `POST` | `/api/import/csv` | import CSV w formacie aplikacji |
 
 Pełny kontrakt jest dostępny w Swagger UI pod `/docs`.
+
+### Aktywność i prezentacja kwot
+
+`GET /api/activity` przyjmuje opcjonalne parametry `date_from`, `date_to`,
+`account_id`, `source`, `page` i `page_size` (maksymalnie 100). Wynik zawiera
+pełne dane snapshotu, saldo poprzednie i zmianę w walucie bazowej oraz pola
+`total` i `hasMore`. Poprzedni wpis jest wyszukiwany w całej historii konta,
+nie tylko wewnątrz wybranego zakresu dat, dzięki czemu zmiana na pierwszym
+widocznym wierszu pozostaje prawidłowa.
+
+Widok Aktywność domyślnie pokazuje 30 dni, pozwala wybrać szybki zakres,
+konkretne daty, konto (także archiwalne) i źródło oraz doładowuje kolejne 25
+wpisów. Kwoty szczegółowe mają zawsze dwa miejsca po przecinku. Dashboard
+zaokrągla tylko trzy główne sumy; pozostałe widoki używają formatu adaptacyjnego
+do dwóch miejsc po przecinku.
 
 ### Kontrakt synchronizacji
 

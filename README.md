@@ -13,6 +13,7 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - przypomnienia i oznaczenia nieaktualnych kont;
 - snapshoty salda z datą, notatką i wyróżnieniem istotnej zmiany;
 - historia konta z wykresem oraz korektą i usuwaniem wpisów;
+- pełna aktywność z filtrowaniem dat, kont i źródeł oraz stronicowaniem;
 - dashboard wartości netto, aktywów, zadłużenia i alokacji;
 - raport miesięczny, raport roczny i porównania rok do roku;
 - cele finansowe z terminem i postępem liczonym od wartości netto w chwili utworzenia, także dla wartości ujemnych;
@@ -122,6 +123,11 @@ ostatni kurs średni NBP dostępny dla wskazanej daty i zapisuje go lokalnie.
 Weekend lub święto korzysta z ostatniego wcześniejszego notowania. Zmiana
 waluty bazowej wpływa na prezentację i raporty, ale nie zmienia oryginalnych
 kwot. Aktywność pokazuje kurs oraz datę tabeli NBP użyte dla każdego snapshotu.
+
+Główne sumy na dashboardzie są zaokrąglane do pełnych jednostek waluty, żeby
+pozostały czytelne. Widoki kont i raportów pokazują część dziesiętną, gdy jest
+potrzebna, a Aktywność i historia kont zawsze prezentują dokładne kwoty z dwoma
+miejscami po przecinku.
 
 Pierwszy zapis wartości w obcej walucie wymaga dostępu kontenera do
 `https://api.nbp.pl`.

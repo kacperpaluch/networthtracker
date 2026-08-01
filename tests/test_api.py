@@ -57,6 +57,72 @@ def test_create_account_and_snapshot():
     assert snapshot.json()["amount"] == 5200
 
 
+def test_activity_filters_paginates_and_calculates_changes():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto historii aktywności",
+            "institution": "Bank testowy",
+            "kind": "asset",
+            "category": "Gotówka",
+            "opening_balance": 100,
+        },
+    ).json()
+    opening_date = date.fromisoformat(account["last_updated"])
+    update_date = opening_date + timedelta(days=1)
+    created = client.post(
+        f"/api/accounts/{account['id']}/snapshots",
+        json={
+            "amount": 125.75,
+            "snapshot_date": update_date.isoformat(),
+            "note": "Dokładna aktualizacja",
+        },
+    )
+    assert created.status_code == 201
+
+    first_page = client.get(
+        "/api/activity",
+        params={"account_id": account["id"], "page": 1, "page_size": 1},
+    )
+    assert first_page.status_code == 200
+    payload = first_page.json()
+    assert payload["total"] == 2
+    assert payload["hasMore"] is True
+    assert payload["items"][0]["date"] == update_date.isoformat()
+    assert payload["items"][0]["amount"] == 125.75
+    assert payload["items"][0]["previousAmount"] == 100
+    assert payload["items"][0]["change"] == 25.75
+
+    second_page = client.get(
+        "/api/activity",
+        params={"account_id": account["id"], "page": 2, "page_size": 1},
+    ).json()
+    assert second_page["hasMore"] is False
+    assert second_page["items"][0]["previousAmount"] is None
+    assert second_page["items"][0]["change"] is None
+
+    filtered = client.get(
+        "/api/activity",
+        params={
+            "account_id": account["id"],
+            "date_from": update_date.isoformat(),
+            "date_to": update_date.isoformat(),
+            "source": "manual",
+        },
+    ).json()
+    assert filtered["total"] == 1
+    assert filtered["items"][0]["note"] == "Dokładna aktualizacja"
+
+    invalid = client.get(
+        "/api/activity",
+        params={
+            "date_from": update_date.isoformat(),
+            "date_to": opening_date.isoformat(),
+        },
+    )
+    assert invalid.status_code == 422
+
+
 def test_sync_api_creates_updates_and_skips_unchanged_balances():
     account = client.post(
         "/api/accounts",

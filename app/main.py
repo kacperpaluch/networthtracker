@@ -9,12 +9,12 @@ import math
 import os
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import inspect, text
+from sqlalchemy import and_, inspect, or_, text
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine, get_db
@@ -103,7 +103,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.3.1")
+app = FastAPI(title="Worthly", version="1.4.0")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -627,6 +627,103 @@ def dashboard(db: Session = Depends(get_db)):
             goal_response(goal, current_net, base_currency, db)
             for goal in goals
         ],
+    }
+
+
+@app.get("/api/activity")
+def activity(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    account_id: int | None = None,
+    source: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "Data początkowa nie może być późniejsza niż końcowa")
+
+    query = db.query(Snapshot).join(Account)
+    if date_from:
+        query = query.filter(Snapshot.snapshot_date >= date_from)
+    if date_to:
+        query = query.filter(Snapshot.snapshot_date <= date_to)
+    if account_id is not None:
+        query = query.filter(Snapshot.account_id == account_id)
+    if source:
+        query = query.filter(Snapshot.source == source)
+
+    total = query.count()
+    snapshots = (
+        query.order_by(
+            Snapshot.snapshot_date.desc(),
+            Snapshot.created_at.desc(),
+            Snapshot.id.desc(),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    base_currency = get_setting(db, "base_currency", "PLN")
+    items = []
+    for snapshot in snapshots:
+        previous = (
+            db.query(Snapshot)
+            .filter(
+                Snapshot.account_id == snapshot.account_id,
+                or_(
+                    Snapshot.snapshot_date < snapshot.snapshot_date,
+                    and_(
+                        Snapshot.snapshot_date == snapshot.snapshot_date,
+                        Snapshot.id < snapshot.id,
+                    ),
+                ),
+            )
+            .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
+            .first()
+        )
+        amount = snapshot_value(snapshot, base_currency, db)
+        previous_amount = (
+            snapshot_value(previous, base_currency, db) if previous else None
+        )
+        items.append(
+            {
+                "id": snapshot.id,
+                "accountId": snapshot.account_id,
+                "account": snapshot.account.name,
+                "institution": snapshot.account.institution,
+                "kind": snapshot.account.kind,
+                "currency": snapshot.account.currency,
+                "date": snapshot.snapshot_date.isoformat(),
+                "createdAt": snapshot.created_at.isoformat(),
+                "amount": round(amount, 2),
+                "nativeAmount": snapshot.amount,
+                "previousAmount": (
+                    round(previous_amount, 2)
+                    if previous_amount is not None
+                    else None
+                ),
+                "change": (
+                    round(amount - previous_amount, 2)
+                    if previous_amount is not None
+                    else None
+                ),
+                "note": snapshot.note,
+                "important": snapshot.important,
+                "source": snapshot.source,
+                "rateToPln": snapshot.rate_to_pln,
+                "rateDate": (
+                    snapshot.rate_date.isoformat() if snapshot.rate_date else None
+                ),
+            }
+        )
+
+    return {
+        "items": items,
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+        "hasMore": page * page_size < total,
     }
 
 

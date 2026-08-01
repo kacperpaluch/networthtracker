@@ -9,6 +9,16 @@ const state = {
   allAccounts: null,
   showArchived: false,
   historySnapshots: [],
+  activity: {
+    items: [],
+    page: 1,
+    pageSize: 25,
+    total: 0,
+    hasMore: false,
+    loading: false,
+    requestId: 0,
+    filters: { from: "", to: "", accountId: "", source: "", preset: "30" },
+  },
   baseCurrency: "PLN",
   dateFormat: "DD.MM.YYYY",
 };
@@ -18,11 +28,19 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const main = $("#mainContent");
 
 let money;
+let summaryMoney;
+let detailMoney;
 let compactMoney;
 function configureFormatters(currency = "PLN") {
   state.baseCurrency = currency;
   money = new Intl.NumberFormat("pl-PL", {
+    style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 2,
+  });
+  summaryMoney = new Intl.NumberFormat("pl-PL", {
     style: "currency", currency, maximumFractionDigits: 0,
+  });
+  detailMoney = new Intl.NumberFormat("pl-PL", {
+    style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
   compactMoney = new Intl.NumberFormat("pl-PL", {
     notation: "compact", style: "currency", currency, maximumFractionDigits: 1,
@@ -46,9 +64,15 @@ function dateLabel(value) {
   if (state.dateFormat === "DD/MM/YYYY") return `${day}/${month}/${year}`;
   return `${day}.${month}.${year}`;
 }
+function isoDateOffset(days = 0) {
+  const value = new Date();
+  value.setHours(12, 0, 0, 0);
+  value.setDate(value.getDate() + days);
+  return value.toISOString().slice(0, 10);
+}
 function nativeMoney(value, currency) {
   return new Intl.NumberFormat("pl-PL", {
-    style: "currency", currency, maximumFractionDigits: 2,
+    style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(value);
 }
 function monthLabel(value) {
@@ -78,6 +102,9 @@ function accountGlyph(category) {
 }
 function signed(value) {
   return `${value > 0 ? "+" : value < 0 ? "−" : ""}${money.format(Math.abs(value))}`;
+}
+function signedDetail(value) {
+  return `${value > 0 ? "+" : value < 0 ? "−" : ""}${detailMoney.format(Math.abs(value))}`;
 }
 function showToast(message) {
   const toast = $("#toast");
@@ -168,12 +195,12 @@ function renderDashboard() {
     <section class="hero-card">
       <div class="hero-copy">
         <span class="eyebrow">◉ Wartość netto</span>
-        <h1>${money.format(summary.netWorth)}</h1>
+        <h1>${summaryMoney.format(summary.netWorth)}</h1>
         <div class="change ${positive ? "positive" : "negative"}">${positive ? "↗" : "↘"} ${signed(summary.change)} (${Math.abs(summary.changePercent)}%) <small>od ostatniej aktualizacji</small></div>
       </div>
       <div class="hero-divider"></div>
-      <div class="hero-stat"><span>Aktywa</span><strong>${money.format(summary.assets)}</strong><small><i class="dot asset"></i>${Math.round(summary.assets / total * 100)}% całości</small></div>
-      <div class="hero-stat"><span>Zobowiązania</span><strong>${money.format(summary.liabilities)}</strong><small><i class="dot debt"></i>${Math.round(summary.liabilities / total * 100)}% całości</small></div>
+      <div class="hero-stat"><span>Aktywa</span><strong>${summaryMoney.format(summary.assets)}</strong><small><i class="dot asset"></i>${Math.round(summary.assets / total * 100)}% całości</small></div>
+      <div class="hero-stat"><span>Zobowiązania</span><strong>${summaryMoney.format(summary.liabilities)}</strong><small><i class="dot debt"></i>${Math.round(summary.liabilities / total * 100)}% całości</small></div>
     </section>
     <div class="main-grid">
       <section class="panel chart-panel">
@@ -269,13 +296,112 @@ async function renderAccounts(query = "") {
   }
 }
 
-function renderActivity() {
-  const { recent, summary } = state.dashboard;
+function applyActivityPreset(preset) {
+  state.activity.filters.preset = preset;
+  state.activity.filters.to = preset === "all" ? "" : isoDateOffset(0);
+  state.activity.filters.from = preset === "all" ? "" : isoDateOffset(-(Number(preset) - 1));
+}
+
+function activitySourceLabel(source) {
+  return ({
+    "actual-budget": "Actual Budget",
+    manual: "Ręcznie",
+    import: "Import",
+    seed: "Dane demo",
+  })[source] || source || "Inne";
+}
+
+async function renderActivity() {
+  if (!state.activity.filters.from && state.activity.filters.preset === "30") applyActivityPreset("30");
+  if (!state.allAccounts) {
+    try { state.allAccounts = await api("/accounts?include_archived=true"); }
+    catch { state.allAccounts = state.dashboard.accounts; }
+  }
+  if (state.view !== "activity") return;
+  const filters = state.activity.filters;
+  const accounts = [...state.allAccounts].sort((a, b) => a.name.localeCompare(b.name, "pl"));
   main.innerHTML = `
-    <div class="view-heading"><div><h1>Ostatnia aktywność</h1><p>Historia zapisanych snapshotów salda.</p></div></div>
-    <section class="panel activity-list">${recent.map((item) => `
-      <div class="activity-item ${item.important ? "important-change" : ""}"><span class="activity-icon ${item.kind}">${item.important ? "★" : "↻"}</span><span><strong>${esc(item.account)}</strong><small>${esc(item.note || `Saldo z dnia ${dateLabel(item.date)}`)} · snapshot ${dateLabel(item.date)}${item.currency !== state.baseCurrency ? ` · ${nativeMoney(item.nativeAmount, item.currency)}` : ""}</small>${item.currency !== "PLN" && item.rateDate ? `<small class="fx-detail">Kurs: 1 ${esc(item.currency)} = ${Number(item.rateToPln).toFixed(4)} PLN · tabela NBP z ${dateLabel(item.rateDate)}</small>` : ""}</span><strong>${money.format(item.amount)}</strong></div>`).join("")}</section>
-    <section class="insight"><strong>✦ PODSUMOWANIE</strong><p>Wartość netto ${summary.change >= 0 ? "wzrosła" : "spadła"} o ${money.format(Math.abs(summary.change))} od ostatniej aktualizacji.</p></section>`;
+    <div class="view-heading"><div><h1>Aktywność</h1><p>Pełna historia zapisów salda — każda aktualizacja osobno.</p></div></div>
+    <section class="panel activity-toolbar">
+      <div class="activity-presets" aria-label="Szybki zakres dat">
+        ${[["7", "7 dni"], ["30", "30 dni"], ["90", "90 dni"], ["all", "Całość"]].map(([value, label]) => `<button type="button" data-activity-preset="${value}" class="${filters.preset === value ? "active" : ""}">${label}</button>`).join("")}
+      </div>
+      <form id="activityFilters" class="activity-filters">
+        <label>Od<input type="date" name="from" value="${esc(filters.from)}"></label>
+        <label>Do<input type="date" name="to" value="${esc(filters.to)}"></label>
+        <label>Konto<select name="accountId"><option value="">Wszystkie konta</option>${accounts.map((account) => `<option value="${account.id}" ${String(account.id) === filters.accountId ? "selected" : ""}>${esc(account.name)}${account.archived ? " (archiwalne)" : ""}</option>`).join("")}</select></label>
+        <label>Źródło<select name="source"><option value="">Wszystkie źródła</option>${[["actual-budget", "Actual Budget"], ["manual", "Ręcznie"], ["import", "Import"], ["seed", "Dane demo"]].map(([value, label]) => `<option value="${value}" ${value === filters.source ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        <button class="button primary" type="submit">Filtruj</button>
+        <button class="button secondary" type="button" id="resetActivityFilters">Wyczyść</button>
+      </form>
+    </section>
+    <div id="activityResults"><div class="skeleton activity-skeleton"></div></div>`;
+  loadActivity(true);
+}
+
+async function loadActivity(reset = false) {
+  const requestId = ++state.activity.requestId;
+  state.activity.loading = true;
+  if (reset) {
+    state.activity.page = 1;
+    state.activity.items = [];
+  }
+  const results = $("#activityResults");
+  if (reset && results) results.innerHTML = `<div class="skeleton activity-skeleton"></div>`;
+  const params = new URLSearchParams({
+    page: String(state.activity.page),
+    page_size: String(state.activity.pageSize),
+  });
+  const { from, to, accountId, source } = state.activity.filters;
+  if (from) params.set("date_from", from);
+  if (to) params.set("date_to", to);
+  if (accountId) params.set("account_id", accountId);
+  if (source) params.set("source", source);
+  try {
+    const payload = await api(`/activity?${params}`);
+    if (state.view !== "activity" || requestId !== state.activity.requestId) return;
+    state.activity.items = reset ? payload.items : [...state.activity.items, ...payload.items];
+    state.activity.total = payload.total;
+    state.activity.hasMore = payload.hasMore;
+    renderActivityResults();
+  } catch (error) {
+    if (requestId === state.activity.requestId && results) results.innerHTML = `<section class="insight"><strong>Nie udało się pobrać aktywności</strong><p>${esc(error.message)}</p></section>`;
+  } finally {
+    if (requestId === state.activity.requestId) state.activity.loading = false;
+  }
+}
+
+function renderActivityResults() {
+  const results = $("#activityResults");
+  if (!results) return;
+  if (!state.activity.items.length) {
+    results.innerHTML = `<section class="empty-state activity-empty"><strong>Brak zapisów w tym zakresie</strong><p>Zmień filtry albo wybierz dłuższy okres.</p></section>`;
+    return;
+  }
+  let previousDate = null;
+  const rows = state.activity.items.map((item) => {
+    const day = item.date !== previousDate ? `<div class="activity-day"><span>${dateLabel(item.date)}</span></div>` : "";
+    previousDate = item.date;
+    const favorable = item.change == null || (item.kind === "asset" ? item.change >= 0 : item.change <= 0);
+    const change = item.change == null
+      ? `<span class="activity-first">Pierwszy wpis</span>`
+      : `<span class="activity-change ${favorable ? "positive" : "negative"}">${signedDetail(item.change)}</span><small>${detailMoney.format(item.previousAmount)} → ${detailMoney.format(item.amount)}</small>`;
+    const native = item.currency !== state.baseCurrency
+      ? `<small>${nativeMoney(item.nativeAmount, item.currency)} w walucie konta</small>`
+      : "";
+    const rate = item.currency !== "PLN" && item.rateDate
+      ? `<small class="fx-detail">1 ${esc(item.currency)} = ${Number(item.rateToPln).toFixed(4)} PLN · kurs z ${dateLabel(item.rateDate)}</small>`
+      : "";
+    return `${day}<article class="activity-item ${item.important ? "important-change" : ""}">
+      <span class="activity-icon ${item.kind}">${item.important ? "★" : "↻"}</span>
+      <div class="activity-copy"><button data-history="${item.accountId}">${esc(item.account)}</button><small>${esc(item.institution)} · ${esc(item.note || "Zapis salda")}</small>${rate}</div>
+      <span class="source-badge">${esc(activitySourceLabel(item.source))}</span>
+      <div class="activity-delta">${change}</div>
+      <div class="activity-amount"><strong>${detailMoney.format(item.amount)}</strong>${native}</div>
+    </article>`;
+  }).join("");
+  results.innerHTML = `<section class="panel activity-list">${rows}</section>
+    <footer class="activity-footer"><span>Wyświetlono ${state.activity.items.length} z ${state.activity.total} zapisów</span>${state.activity.hasMore ? `<button class="button secondary" id="loadMoreActivity">Pokaż kolejne</button>` : ""}</footer>`;
 }
 
 function reportTabs() {
@@ -609,6 +735,19 @@ document.addEventListener("click", (event) => {
     $("#pageTitle").textContent = state.reportMode === "annual" ? "Raport roczny" : "Raport miesięczny";
     renderReport();
   }
+  const activityPreset = event.target.closest("[data-activity-preset]");
+  if (activityPreset) {
+    applyActivityPreset(activityPreset.dataset.activityPreset);
+    renderActivity();
+  }
+  if (event.target.closest("#resetActivityFilters")) {
+    state.activity.filters = { from: "", to: "", accountId: "", source: "", preset: "all" };
+    renderActivity();
+  }
+  if (event.target.closest("#loadMoreActivity")) {
+    state.activity.page += 1;
+    loadActivity();
+  }
   const goalComplete = event.target.closest("[data-goal-complete]");
   if (goalComplete) {
     const goal = state.dashboard.goals.find((item) => item.id === Number(goalComplete.dataset.goalComplete));
@@ -709,6 +848,19 @@ main.addEventListener("change", (event) => {
     state.selectedMonth = event.target.value;
     renderReport();
   }
+});
+main.addEventListener("submit", (event) => {
+  if (event.target.id !== "activityFilters") return;
+  event.preventDefault();
+  const form = new FormData(event.target);
+  state.activity.filters = {
+    from: String(form.get("from") || ""),
+    to: String(form.get("to") || ""),
+    accountId: String(form.get("accountId") || ""),
+    source: String(form.get("source") || ""),
+    preset: "custom",
+  };
+  loadActivity(true);
 });
 $("#accountForm").addEventListener("submit", async (event) => {
   event.preventDefault();
