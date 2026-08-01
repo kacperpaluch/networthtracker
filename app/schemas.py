@@ -26,6 +26,7 @@ class AccountUpdate(BaseModel):
     update_frequency: str | None = Field(
         default=None, pattern="^(weekly|monthly|quarterly|yearly)$"
     )
+    convert_amounts: bool = False
 
 
 class SnapshotCreate(BaseModel):
@@ -41,6 +42,15 @@ class SnapshotUpdate(BaseModel):
     snapshot_date: date | None = None
     note: str | None = Field(default=None, max_length=300)
     important: bool | None = None
+
+
+class SyncEntry(BaseModel):
+    date: date
+    account_name: str = Field(min_length=1, max_length=120)
+    value: float = Field(ge=0)
+    currency: str | None = Field(
+        default=None, min_length=3, max_length=3, pattern="^[A-Za-z]{3}$"
+    )
 
 
 class AccountOut(BaseModel):

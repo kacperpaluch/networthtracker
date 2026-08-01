@@ -3,8 +3,11 @@
 .env.local
 !.env.example
 *.pyc
+*.pyo
+*.egg-info/
 __pycache__/
 .pytest_cache/
+venv/
 .venv/
 data/
 backups/*.db

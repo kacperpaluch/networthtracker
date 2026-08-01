@@ -169,10 +169,11 @@ historycznego wyniku.
 | `GET` | `/api/health` | healthcheck |
 | `GET` | `/api/dashboard` | agregaty i dane widoków |
 | `GET/POST` | `/api/accounts` | lista i nowe konto |
-| `PATCH` | `/api/accounts/{id}` | edycja, zmiana waluty lub archiwizacja |
+| `PATCH` | `/api/accounts/{id}` | edycja, zmiana lub konwersja waluty, archiwizacja |
 | `DELETE` | `/api/accounts/{id}` | trwałe usunięcie konta i snapshotów |
 | `GET/POST` | `/api/accounts/{id}/snapshots` | historia i nowy snapshot |
 | `PATCH/DELETE` | `/api/snapshots/{id}` | korekta lub usunięcie |
+| `POST` | `/api/sync` | idempotentny upsert sald po nazwie konta i dacie |
 | `GET` | `/api/reports/monthly?month=RRRR-MM` | raport miesięczny |
 | `GET` | `/api/reports/annual?year=RRRR` | raport roczny |
 | `GET/PATCH` | `/api/settings` | preferencje |
@@ -185,6 +186,38 @@ historycznego wyniku.
 | `POST` | `/api/import/csv` | import CSV w formacie aplikacji |
 
 Pełny kontrakt jest dostępny w Swagger UI pod `/docs`.
+
+### Kontrakt synchronizacji
+
+`POST /api/sync` zachowuje kompatybilność z integracjami n8n używanymi przez
+poprzednią wersję aplikacji. Body jest tablicą obiektów z polami `date`
+(`RRRR-MM-DD`), `account_name`, nieujemnym `value` oraz opcjonalnym
+trzyliterowym `currency`. `value` zawsze oznacza kwotę natywną konta. Gdy
+`currency` jest przekazane, musi odpowiadać walucie konta; jego brak oznacza
+walutę konta dla kompatybilności ze starszymi klientami.
+
+Endpoint buduje indeks aktywnych kont z użyciem `casefold()`. Brak dopasowania
+lub kilka aktywnych kont o tej samej nazwie zwraca błąd danego elementu bez
+przerywania całej paczki. Istniejący snapshot dla konta i daty jest wybierany
+od najnowszego ID. Zmieniona wartość jest aktualizowana, identyczna klasyfikowana
+jako `unchanged`, a brakujący snapshot tworzony ze źródłem `actual-budget`.
+Nowy wpis walutowy zapisuje historyczny kurs NBP zgodnie ze zwykłym mechanizmem
+snapshotów. Po paczce przeliczane jest `next_update` każdego dotkniętego konta.
+
+Odpowiedź zawiera liczniki `created`, `updated`, `unchanged`, listę `synced`
+z akcją każdego poprawnego elementu oraz listę `errors`.
+
+Dla budżetu Actual prowadzonego w PLN zalecamy ustawić walutę wszystkich
+synchronizowanych kont Worthly na `PLN`, także kont pomocniczych nazwanych `USD`
+i `EUR`. Workflow wyceny najpierw doprowadza ich salda Actual do aktualnej
+wartości PLN, a workflow Trackera uruchomiony później przesyła je z polem
+`"currency": "PLN"`. Dzięki temu Worthly nie powiela logiki wyceny.
+
+Migracja istniejącego konta walutowego używa `PATCH /api/accounts/{id}` z
+`{"currency":"PLN","convert_amounts":true}`. Flaga zachowuje wartość PLN
+każdego historycznego snapshotu na podstawie zapisanego kursu. Domyślne
+`convert_amounts:false` zachowuje dotychczasową semantykę korekty błędnie
+oznaczonej waluty, czyli nie zmienia liczby jednostek.
 
 ## Migracje
 

@@ -57,6 +57,101 @@ def test_create_account_and_snapshot():
     assert snapshot.json()["amount"] == 5200
 
 
+def test_sync_api_creates_updates_and_skips_unchanged_balances():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto synchronizowane",
+            "kind": "asset",
+            "category": "Gotówka",
+            "opening_balance": 1000,
+        },
+    ).json()
+    payload = [
+        {
+            "date": "2026-07-26",
+            "account_name": "konto SYNCHRONIZOWANE",
+            "value": 1200.5,
+            "currency": "pln",
+        }
+    ]
+
+    created = client.post("/api/sync", json=payload)
+    assert created.status_code == 200
+    assert created.json()["created"] == 1
+    assert created.json()["updated"] == 0
+    assert created.json()["unchanged"] == 0
+    assert created.json()["synced"][0]["action"] == "created"
+
+    unchanged = client.post("/api/sync", json=payload)
+    assert unchanged.status_code == 200
+    assert unchanged.json()["created"] == 0
+    assert unchanged.json()["updated"] == 0
+    assert unchanged.json()["unchanged"] == 1
+
+    payload[0]["value"] = 1250.75
+    updated = client.post("/api/sync", json=payload)
+    assert updated.status_code == 200
+    assert updated.json()["created"] == 0
+    assert updated.json()["updated"] == 1
+    assert updated.json()["unchanged"] == 0
+
+    dated = [
+        item
+        for item in client.get(
+            f"/api/accounts/{account['id']}/snapshots"
+        ).json()
+        if item["snapshot_date"] == "2026-07-26"
+    ]
+    assert len(dated) == 1
+    assert dated[0]["amount"] == 1250.75
+    assert dated[0]["source"] == "actual-budget"
+
+
+def test_sync_api_reports_unknown_accounts_without_rejecting_batch():
+    response = client.post(
+        "/api/sync",
+        json=[
+            {
+                "date": "2026-07-26",
+                "account_name": "Nieistniejące konto",
+                "value": 100,
+            }
+        ],
+    )
+    assert response.status_code == 200
+    assert response.json()["created"] == 0
+    assert response.json()["synced"] == []
+    assert len(response.json()["errors"]) == 1
+
+
+def test_sync_api_rejects_value_in_wrong_currency():
+    client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto tylko PLN",
+            "kind": "asset",
+            "category": "Gotówka",
+            "currency": "PLN",
+            "opening_balance": 100,
+        },
+    )
+    response = client.post(
+        "/api/sync",
+        json=[
+            {
+                "date": "2026-07-26",
+                "account_name": "Konto tylko PLN",
+                "value": 25,
+                "currency": "USD",
+            }
+        ],
+    )
+    assert response.status_code == 200
+    assert response.json()["created"] == 0
+    assert "Waluta wejściowa USD" in response.json()["errors"][0]["error"]
+
+
 def test_historical_monthly_report():
     response = client.get("/api/reports/monthly?month=2026-06")
     assert response.status_code == 200
@@ -174,6 +269,37 @@ def test_change_account_currency_recalculates_snapshot_rates(monkeypatch):
     ).json()
     assert snapshots[0]["amount"] == 100
     assert snapshots[0]["rate_to_pln"] == 4.25
+
+
+def test_change_account_currency_can_preserve_pln_snapshot_values(monkeypatch):
+    rates = {"USD": 4.0, "PLN": 1.0}
+    monkeypatch.setattr(
+        "app.main.rate_to_pln",
+        lambda currency, day, db, **kwargs: (rates[currency], day),
+    )
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto USD konwertowane do PLN",
+            "kind": "asset",
+            "category": "Gotówka",
+            "currency": "USD",
+            "opening_balance": 50,
+        },
+    ).json()
+
+    changed = client.patch(
+        f"/api/accounts/{account['id']}",
+        json={"currency": "PLN", "convert_amounts": True},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["currency"] == "PLN"
+    snapshots = client.get(
+        f"/api/accounts/{account['id']}/snapshots"
+    ).json()
+    assert snapshots[0]["amount"] == 200
+    assert snapshots[0]["rate_to_pln"] == 1
+    assert changed.json()["current_balance"] == 200
 
 
 def test_delete_account_also_deletes_its_snapshots():

@@ -13,6 +13,7 @@ bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 - aktywa vs zobowiązania i udziały procentowe;
 - PLN, EUR, USD, GBP i CHF z historycznymi kursami NBP oraz poprawną obsługą weekendów i świąt;
 - eksport/import JSON i eksport CSV;
+- idempotentny endpoint `POST /api/sync` do integracji z Actual Budget i n8n;
 - cron backupujący SQLite do folderu hosta.
 
 ## Docker Compose

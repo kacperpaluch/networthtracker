@@ -30,6 +30,7 @@ from .schemas import (
     SnapshotCreate,
     SnapshotOut,
     SnapshotUpdate,
+    SyncEntry,
 )
 from .seed import seed_database
 
@@ -102,7 +103,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.2.0")
+app = FastAPI(title="Worthly", version="1.3.0")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -274,13 +275,22 @@ def update_account(account_id: int, payload: AccountUpdate, db: Session = Depend
     account = db.get(Account, account_id)
     if not account:
         raise HTTPException(404, "Nie znaleziono konta")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    previous_currency = account.currency
+    changes = payload.model_dump(exclude_unset=True)
+    convert_amounts = changes.pop("convert_amounts", False)
+    amounts_pln = {
+        snapshot.id: snapshot.amount * (snapshot.rate_to_pln or 1.0)
+        for snapshot in account.snapshots
+    }
+    for key, value in changes.items():
         if key == "currency" and value:
             value = value.upper()
         setattr(account, key, value)
     if "currency" in payload.model_fields_set:
         for snapshot in account.snapshots:
             prepare_snapshot_rate(snapshot, account, db)
+            if convert_amounts and account.currency != previous_currency:
+                snapshot.amount = amounts_pln[snapshot.id] / snapshot.rate_to_pln
     if "update_frequency" in payload.model_fields_set:
         recalculate_next_update(account, db)
     db.commit()
@@ -341,6 +351,108 @@ def recalculate_next_update(account: Account, db: Session):
         "yearly": 365,
     }.get(account.update_frequency, 30)
     account.next_update = latest.snapshot_date + timedelta(days=days)
+
+
+@app.post("/api/sync")
+def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
+    """Idempotently import dated balances from Actual Budget or another source."""
+    active_accounts: dict[str, list[Account]] = defaultdict(list)
+    for account in db.query(Account).filter(Account.archived.is_(False)).all():
+        active_accounts[account.name.casefold()].append(account)
+
+    created = updated = unchanged = 0
+    synced = []
+    errors = []
+    touched_accounts: dict[int, Account] = {}
+
+    for item in payload:
+        matches = active_accounts.get(item.account_name.strip().casefold(), [])
+        result_key = {
+            "date": item.date.isoformat(),
+            "account_name": item.account_name,
+        }
+        if not matches:
+            errors.append(
+                {
+                    **result_key,
+                    "error": (
+                        f"Konto '{item.account_name}' nie istnieje "
+                        "lub jest zarchiwizowane"
+                    ),
+                }
+            )
+            continue
+        if len(matches) > 1:
+            errors.append(
+                {
+                    **result_key,
+                    "error": (
+                        f"Nazwa konta '{item.account_name}' nie jest unikalna"
+                    ),
+                }
+            )
+            continue
+
+        account = matches[0]
+        input_currency = (item.currency or account.currency).upper()
+        if input_currency != account.currency:
+            errors.append(
+                {
+                    **result_key,
+                    "error": (
+                        f"Waluta wejściowa {input_currency} nie zgadza się "
+                        f"z walutą konta {account.currency}"
+                    ),
+                }
+            )
+            continue
+
+        snapshot = (
+            db.query(Snapshot)
+            .filter(
+                Snapshot.account_id == account.id,
+                Snapshot.snapshot_date == item.date,
+            )
+            .order_by(Snapshot.id.desc())
+            .first()
+        )
+        if snapshot is None:
+            snapshot = Snapshot(
+                account_id=account.id,
+                snapshot_date=item.date,
+                amount=item.value,
+                note="Synchronizacja z Actual Budget",
+                source="actual-budget",
+            )
+            prepare_snapshot_rate(snapshot, account, db)
+            db.add(snapshot)
+            created += 1
+            action = "created"
+        elif math.isclose(snapshot.amount, item.value, rel_tol=0, abs_tol=1e-9):
+            unchanged += 1
+            action = "unchanged"
+        else:
+            snapshot.amount = item.value
+            snapshot.source = "actual-budget"
+            updated += 1
+            action = "updated"
+
+        touched_accounts[account.id] = account
+        synced.append(
+            {**result_key, "currency": input_currency, "action": action}
+        )
+
+    db.flush()
+    for account in touched_accounts.values():
+        recalculate_next_update(account, db)
+    db.commit()
+    return {
+        "created": created,
+        "updated": updated,
+        "unchanged": unchanged,
+        "synced": synced,
+        "errors": errors,
+    }
 
 
 def balance_at(

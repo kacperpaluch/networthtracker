@@ -18,6 +18,7 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - cele finansowe z terminem i postępem liczonym od wartości netto w chwili utworzenia, także dla wartości ujemnych;
 - konta w PLN, EUR, USD, GBP i CHF;
 - historyczne kursy średnie z NBP zapisywane przy snapshotach;
+- idempotentna synchronizacja sald z Actual Budget i n8n;
 - widoczna data ostatnich tabel NBP i ręczne pobranie najnowszych kursów;
 - ustawienia waluty bazowej i formatu dat;
 - eksport i import JSON oraz eksport historii do CSV;
@@ -124,6 +125,78 @@ kwot. Aktywność pokazuje kurs oraz datę tabeli NBP użyte dla każdego snapsh
 
 Pierwszy zapis wartości w obcej walucie wymaga dostępu kontenera do
 `https://api.nbp.pl`.
+
+## Synchronizacja z Actual Budget i n8n
+
+Endpoint `POST /api/sync` przyjmuje tablicę sald historycznych. Konto jest
+dopasowywane po nazwie bez uwzględniania wielkości liter. Nazwa musi
+jednoznacznie wskazywać aktywne konto w Worthly.
+
+```json
+[
+  {
+    "date": "2026-07-26",
+    "account_name": "PKO Konsolidacja",
+    "value": 74564.8,
+    "currency": "PLN"
+  }
+]
+```
+
+Synchronizacja jest idempotentna dla pary `konto + data`:
+
+- brak snapshotu tworzy nowy wpis ze źródłem `actual-budget`;
+- zmienione saldo aktualizuje istniejący wpis;
+- identyczne saldo pozostaje bez zmian;
+- brakujące, zarchiwizowane lub niejednoznaczne konto trafia do `errors` i nie
+  zatrzymuje pozostałych elementów paczki.
+
+Przykładowa odpowiedź:
+
+```json
+{
+  "created": 1,
+  "updated": 2,
+  "unchanged": 4,
+  "synced": [
+    {
+      "date": "2026-07-26",
+      "account_name": "PKO Konsolidacja",
+      "currency": "PLN",
+      "action": "updated"
+    }
+  ],
+  "errors": []
+}
+```
+
+Workflow może codziennie przesyłać ponownie np. siedem ostatnich dni. Dzięki
+upsertowi transakcja dodana z opóźnieniem do Actual Budget skoryguje historię,
+a niezmienione salda nie utworzą duplikatów. `value` musi być nieujemną kwotą
+w natywnej walucie konta Worthly. Opcjonalne pole `currency` jest porównywane
+z walutą konta i chroni przed zapisaniem salda PLN jako liczby EUR lub USD.
+Jeśli pole zostanie pominięte, API zakłada natywną walutę konta dla zgodności
+ze starszymi integracjami. Wpływ zobowiązań na wartość netto wynika z typu konta.
+
+W zalecanej konfiguracji integracji z Actual Budget wszystkie synchronizowane
+konta Worthly, również te nazwane `USD` i `EUR`, mają walutę `PLN`. Osobny
+workflow najpierw aktualizuje ich wycenę PLN w Actual, a dopiero potem workflow
+Trackera przesyła salda z jawnym `"currency": "PLN"`. Dzięki temu jedna
+integracja pozostaje źródłem prawdy i nie powiela logiki wyceny walut.
+
+Istniejące konto walutowe można bezpiecznie przestawić na PLN przez:
+
+```http
+PATCH /api/accounts/{id}
+Content-Type: application/json
+
+{"currency": "PLN", "convert_amounts": true}
+```
+
+`convert_amounts` zachowuje historyczną wartość PLN: każda kwota jest najpierw
+mnożona przez zapisany przy snapshocie `rate_to_pln`, a następnie przeliczana na
+nową walutę. Bez tej flagi zmiana waluty zachowuje liczby kwot i służy do
+poprawiania błędnie oznaczonej waluty.
 
 ## Rozwój lokalny
 
