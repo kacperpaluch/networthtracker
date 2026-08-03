@@ -10,10 +10,11 @@ bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 - snapshoty z filtrowaną i stronicowaną historią, interaktywnymi wykresami kont oraz notatkami i kursem NBP;
 - pełna aktywność z filtrowaniem dat, kont i źródeł oraz stronicowaniem;
 - dokładne kwoty w historii i czytelnie zaokrąglone podsumowanie dashboardu;
+- globalna zmiana wartości netto liczona między spójnymi punktami czasu;
 - raporty miesięczne i roczne ograniczone do rzeczywistego okresu danych oraz poprawne porównania wartości ujemnych;
 - cele finansowe z wybieraną datą i historyczną wartością początkową, także dla ujemnej wartości netto;
 - aktywa vs zobowiązania i udziały procentowe;
-- PLN, EUR, USD, GBP i CHF z historycznymi kursami NBP oraz poprawną obsługą weekendów i świąt;
+- PLN, EUR, USD, GBP i CHF z trwałym cache NBP; dashboard i raporty działają bez zapytań sieciowych;
 - eksport/import JSON i eksport CSV;
 - idempotentny endpoint `POST /api/sync` do integracji z Actual Budget i n8n;
 - cron backupujący SQLite do folderu hosta.

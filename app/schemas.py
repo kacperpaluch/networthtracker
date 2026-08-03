@@ -1,6 +1,12 @@
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def reject_future_date(value: date | None) -> date | None:
+    if value is not None and value > date.today():
+        raise ValueError("Data nie może być w przyszłości")
+    return value
 
 
 class AccountCreate(BaseModel):
@@ -36,12 +42,20 @@ class SnapshotCreate(BaseModel):
     important: bool = False
     source: str = "manual"
 
+    _snapshot_not_future = field_validator("snapshot_date")(
+        reject_future_date
+    )
+
 
 class SnapshotUpdate(BaseModel):
     amount: float | None = Field(default=None, ge=0)
     snapshot_date: date | None = None
     note: str | None = Field(default=None, max_length=300)
     important: bool | None = None
+
+    _snapshot_not_future = field_validator("snapshot_date")(
+        reject_future_date
+    )
 
 
 class SyncEntry(BaseModel):
@@ -51,6 +65,8 @@ class SyncEntry(BaseModel):
     currency: str | None = Field(
         default=None, min_length=3, max_length=3, pattern="^[A-Za-z]{3}$"
     )
+
+    _date_not_future = field_validator("date")(reject_future_date)
 
 
 class AccountOut(BaseModel):

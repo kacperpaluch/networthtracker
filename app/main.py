@@ -108,7 +108,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.4.0")
+app = FastAPI(title="Worthly", version="1.4.1")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -133,6 +133,7 @@ def set_setting(db: Session, key: str, value: str) -> None:
         setting.value = value
     else:
         db.add(AppSetting(key=key, value=value))
+        db.flush()
 
 
 def snapshot_value(snapshot: Snapshot, base_currency: str, db: Session) -> float:
@@ -148,16 +149,31 @@ def prepare_snapshot_rate(
     rate, rate_date = rate_to_pln(account.currency, snapshot.snapshot_date, db)
     snapshot.rate_to_pln = rate
     snapshot.rate_date = rate_date
+    base_currency = get_setting(db, "base_currency", "PLN")
+    if base_currency != "PLN" and base_currency != account.currency:
+        rate_to_pln(base_currency, snapshot.snapshot_date, db)
+
+
+def prepare_base_rates(
+    base_currency: str, days: set[date], db: Session
+) -> None:
+    if base_currency == "PLN":
+        return
+    for day in sorted(days | {date.today()}):
+        rate_to_pln(base_currency, day, db)
 
 
 def goal_response(
-    goal: Goal, current_net: float, base_currency: str, db: Session
+    goal: Goal, current_net_pln: float, base_currency: str, db: Session
 ) -> dict:
     target = convert_from_pln(
         goal.target_amount, base_currency, date.today(), db
     )
     start = convert_from_pln(
-        goal.start_amount, base_currency, date.today(), db
+        goal.start_amount, base_currency, goal.start_date, db
+    )
+    current_for_goal = convert_from_pln(
+        current_net_pln, base_currency, date.today(), db
     )
     return {
         "id": goal.id,
@@ -167,8 +183,10 @@ def goal_response(
         "startDate": goal.start_date.isoformat(),
         "targetDate": goal.target_date.isoformat() if goal.target_date else None,
         "completed": goal.completed,
-        "currentAmount": round(current_net, 2),
-        "progress": goal_progress(start, current_net, target),
+        "currentAmount": round(current_for_goal, 2),
+        "progress": goal_progress(
+            goal.start_amount, current_net_pln, goal.target_amount
+        ),
     }
 
 
@@ -184,21 +202,23 @@ def percent_change(change: float, baseline: float) -> float:
     return round(change / abs(baseline) * 100, 2) if baseline else 0
 
 
-def current_net_worth(db: Session, base_currency: str) -> float:
+def net_worth_at_pln(cutoff: date, db: Session) -> float:
     value = 0.0
     accounts = db.query(Account).filter(Account.archived.is_(False)).all()
     for account in accounts:
-        balance = account_response(account, db, base_currency).current_balance
-        value += balance if account.kind == "asset" else -balance
-    return value
-
-
-def net_worth_at(cutoff: date, db: Session, base_currency: str) -> float:
-    value = 0.0
-    accounts = db.query(Account).filter(Account.archived.is_(False)).all()
-    for account in accounts:
-        balance = balance_at(account.id, cutoff, base_currency, db)
-        value += balance if account.kind == "asset" else -balance
+        snapshot = (
+            db.query(Snapshot)
+            .filter(
+                Snapshot.account_id == account.id,
+                Snapshot.snapshot_date <= cutoff,
+            )
+            .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
+            .first()
+        )
+        if not snapshot:
+            continue
+        amount_pln = snapshot.amount * (snapshot.rate_to_pln or 1.0)
+        value += amount_pln if account.kind == "asset" else -amount_pln
     return value
 
 
@@ -383,7 +403,7 @@ def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
         first_snapshot = (
             db.query(Snapshot)
             .filter(Snapshot.account_id == account.id)
-            .order_by(Snapshot.id)
+            .order_by(Snapshot.snapshot_date, Snapshot.id)
             .first()
         )
         if first_snapshot:
@@ -557,7 +577,7 @@ def dashboard(db: Session = Depends(get_db)):
         .all()
     )
 
-    current_assets = current_liabilities = previous_assets = previous_liabilities = 0.0
+    current_assets = current_liabilities = 0.0
     category_values: dict[str, float] = defaultdict(float)
     account_items = []
     for account in accounts:
@@ -574,34 +594,40 @@ def dashboard(db: Session = Depends(get_db)):
         account_items.append(item)
         if account.kind == "asset":
             current_assets += output.current_balance
-            previous_assets += output.previous_balance
             category_values[account.category] += output.current_balance
         else:
             current_liabilities += output.current_balance
-            previous_liabilities += output.previous_balance
 
-    by_account: dict[int, list[Snapshot]] = defaultdict(list)
-    timeline_dates = set()
+    accounts_by_id = {account.id: account for account in accounts}
+    snapshots_by_date: dict[date, list[Snapshot]] = defaultdict(list)
     for snapshot in snapshots:
-        by_account[snapshot.account_id].append(snapshot)
-        timeline_dates.add(snapshot.snapshot_date)
+        snapshots_by_date[snapshot.snapshot_date].append(snapshot)
 
+    running_assets = running_liabilities = 0.0
+    running_values: dict[int, float] = {}
     timeline = []
-    for point_date in sorted(timeline_dates):
-        assets = liabilities = 0.0
-        for account in accounts:
-            eligible = [item for item in by_account[account.id] if item.snapshot_date <= point_date]
-            if not eligible:
-                continue
-            value = snapshot_value(eligible[-1], base_currency, db)
+    for point_date, dated_snapshots in sorted(snapshots_by_date.items()):
+        for snapshot in dated_snapshots:
+            account = accounts_by_id[snapshot.account_id]
+            previous_value = running_values.get(account.id, 0.0)
+            value = snapshot_value(snapshot, base_currency, db)
+            running_values[account.id] = value
             if account.kind == "asset":
-                assets += value
+                running_assets += value - previous_value
             else:
-                liabilities += value
-        timeline.append({"date": point_date.isoformat(), "netWorth": round(assets - liabilities, 2), "assets": round(assets, 2), "liabilities": round(liabilities, 2)})
+                running_liabilities += value - previous_value
+        timeline.append(
+            {
+                "date": point_date.isoformat(),
+                "netWorth": round(running_assets - running_liabilities, 2),
+                "assets": round(running_assets, 2),
+                "liabilities": round(running_liabilities, 2),
+            }
+        )
 
     current_net = current_assets - current_liabilities
-    previous_net = previous_assets - previous_liabilities
+    previous_net = timeline[-2]["netWorth"] if len(timeline) > 1 else current_net
+    current_net_pln = net_worth_at_pln(date.today(), db)
     overdue = sum(1 for account in accounts if account.next_update and account.next_update < date.today())
     allocation = [
         {"name": name, "value": round(value, 2), "color": next((account.color for account in accounts if account.category == name), "#2f6f5e")}
@@ -644,7 +670,7 @@ def dashboard(db: Session = Depends(get_db)):
             for item in recent
         ],
         "goals": [
-            goal_response(goal, current_net, base_currency, db)
+            goal_response(goal, current_net_pln, base_currency, db)
             for goal in goals
         ],
     }
@@ -677,7 +703,6 @@ def activity(
     snapshots = (
         query.order_by(
             Snapshot.snapshot_date.desc(),
-            Snapshot.created_at.desc(),
             Snapshot.id.desc(),
         )
         .offset((page - 1) * page_size)
@@ -902,8 +927,10 @@ def settings_info(db: Session = Depends(get_db)):
 
 @app.patch("/api/settings")
 def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)):
-    if payload.base_currency != "PLN":
-        rate_to_pln(payload.base_currency, date.today(), db)
+    snapshot_days = {
+        value[0] for value in db.query(Snapshot.snapshot_date).distinct().all()
+    }
+    prepare_base_rates(payload.base_currency, snapshot_days, db)
     set_setting(db, "base_currency", payload.base_currency)
     set_setting(db, "date_format", payload.date_format)
     db.commit()
@@ -937,20 +964,13 @@ def list_goals(db: Session = Depends(get_db)):
 def create_goal(payload: GoalCreate, db: Session = Depends(get_db)):
     values = payload.model_dump()
     base_currency = get_setting(db, "base_currency", "PLN")
-    explicit_start_date = "start_date" in payload.model_fields_set
     if payload.start_date > date.today():
         raise HTTPException(422, "Data startu celu nie może być w przyszłości")
     if not db.query(Snapshot).filter(Snapshot.snapshot_date <= payload.start_date).first():
         raise HTTPException(422, "Brak danych o wartości netto na wybraną datę startu")
     target_rate, _ = rate_to_pln(base_currency, date.today(), db)
-    start_rate, _ = rate_to_pln(base_currency, payload.start_date, db)
     values["target_amount"] *= target_rate
-    start_value = (
-        net_worth_at(payload.start_date, db, base_currency)
-        if explicit_start_date
-        else current_net_worth(db, base_currency)
-    )
-    values["start_amount"] = start_value * start_rate
+    values["start_amount"] = net_worth_at_pln(payload.start_date, db)
     goal = Goal(**values)
     db.add(goal)
     db.commit()
@@ -970,9 +990,7 @@ def update_goal(goal_id: int, payload: GoalUpdate, db: Session = Depends(get_db)
             raise HTTPException(422, "Data startu celu nie może być w przyszłości")
         if not db.query(Snapshot).filter(Snapshot.snapshot_date <= start_date).first():
             raise HTTPException(422, "Brak danych o wartości netto na wybraną datę startu")
-        base_currency = get_setting(db, "base_currency", "PLN")
-        rate, _ = rate_to_pln(base_currency, start_date, db)
-        goal.start_amount = net_worth_at(start_date, db, base_currency) * rate
+        goal.start_amount = net_worth_at_pln(start_date, db)
     for key, value in updates.items():
         if key == "target_amount" and value is not None:
             base_currency = get_setting(db, "base_currency", "PLN")
@@ -1079,6 +1097,13 @@ def _parse_date(value, field_name: str, optional: bool = False):
         raise HTTPException(422, f"Nieprawidłowa data w polu {field_name}") from None
 
 
+def _parse_snapshot_date(value, field_name: str = "snapshot_date") -> date:
+    parsed = _parse_date(value, field_name)
+    if parsed > date.today():
+        raise HTTPException(422, f"Data w polu {field_name} nie może być w przyszłości")
+    return parsed
+
+
 def _account_import_values(item: dict):
     kind = str(item.get("kind", ""))
     if kind not in {"asset", "liability"}:
@@ -1110,17 +1135,18 @@ def _snapshot_import_values(item: dict):
         rate = float(item.get("rate_to_pln", 1) or 1)
     except (TypeError, ValueError):
         rate = 1.0
+    snapshot_date = _parse_snapshot_date(
+        item.get("snapshot_date") or item.get("date")
+    )
     return {
-        "snapshot_date": _parse_date(item.get("snapshot_date") or item.get("date"), "snapshot_date"),
+        "snapshot_date": snapshot_date,
         "amount": amount,
         "note": str(item.get("note", ""))[:300],
         "important": str(item.get("important", "")).lower()
         in {"1", "true", "yes"},
         "rate_to_pln": rate if rate > 0 else 1.0,
-        "rate_date": _parse_date(
-            item.get("rate_date")
-            or item.get("snapshot_date")
-            or item.get("date"),
+        "rate_date": _parse_snapshot_date(
+            item.get("rate_date") or snapshot_date,
             "rate_date",
         ),
         "source": str(item.get("source", "import"))[:20] or "import",
@@ -1234,6 +1260,12 @@ def import_json(payload: dict, mode: str = "merge", db: Session = Depends(get_db
             ):
                 db.add(goal)
                 existing_goals[name.casefold()] = goal
+        base_currency = get_setting(db, "base_currency", "PLN")
+        snapshot_days = {
+            value[0]
+            for value in db.query(Snapshot.snapshot_date).distinct().all()
+        }
+        prepare_base_rates(base_currency, snapshot_days, db)
         db.commit()
     except HTTPException:
         db.rollback()
@@ -1317,6 +1349,12 @@ def import_csv(payload: dict, db: Session = Depends(get_db)):
                 continue
             db.add(Snapshot(account_id=account.id, **snapshot_values))
             snapshots_created += 1
+        base_currency = get_setting(db, "base_currency", "PLN")
+        snapshot_days = {
+            value[0]
+            for value in db.query(Snapshot.snapshot_date).distinct().all()
+        }
+        prepare_base_rates(base_currency, snapshot_days, db)
         db.commit()
     except HTTPException:
         db.rollback()

@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.4.0` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.4.1` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
@@ -124,7 +124,9 @@ frontendu ani drugiej aplikacji. Katalog `backend/` tworzyłby zbędny poziom.
 
 `AppSetting` przechowuje walutę bazową i format dat. `Goal` przechowuje docelową
 wartość netto, wybraną `start_date` oraz wyliczone dla niej `start_amount`.
-Kwoty celu są normalizowane do PLN. Migracja SQLite uzupełnia `start_date`
+Kwoty celu są normalizowane bezpośrednio do PLN. Postęp jest liczony na
+wartościach PLN, a prezentacja używa kursu właściwego dla daty startu. Migracja
+SQLite uzupełnia `start_date`
 istniejących celów datą ich utworzenia. Dzięki temu postęp działa również
 między wartościami ujemnymi. `ExchangeRate` jest lokalnym cache NBP z unikalną
 parą waluta–data.
@@ -140,6 +142,9 @@ Raport roczny rozpoczyna listę miesięcy od pierwszego snapshotu dostępnego w
 pierwszym roku danych; nie generuje wcześniejszych miesięcy z fikcyjnym zerem.
 Zmiana procentowa używa bezwzględnej wartości bazowej jako mianownika, dzięki
 czemu znak wynika z faktycznego kierunku zmiany również dla wartości ujemnych.
+Pole `summary.change` porównuje dwa ostatnie globalne punkty timeline, dzięki
+czemu nie miesza przedostatnich snapshotów poszczególnych kont. Timeline jest
+budowany w jednym przebiegu po chronologicznie pogrupowanych snapshotach.
 
 ## Reguły finansowe
 
@@ -175,6 +180,16 @@ wartość bazowa = wartość PLN / kurs waluty bazowej do PLN
 
 Kurs jest zapisany przy snapshocie, dlatego późniejsze tabele NBP nie zmieniają
 historycznego wyniku.
+
+Operacje zapisujące dane pobierają i utrwalają brakujące kursy. Zmiana waluty
+bazowej przygotowuje cache dla wszystkich dat istniejących snapshotów. Endpointy
+`GET`, w tym dashboard i raporty, nie wykonują zapytań HTTP do NBP — korzystają
+wyłącznie z lokalnych tabel. Brak kursu zwraca kontrolowane `503` z instrukcją
+odświeżenia zamiast wielokrotnie blokować request.
+
+Daty snapshotów, synchronizacji i importu nie mogą wykraczać poza bieżący
+dzień. Walidacja obejmuje tworzenie, edycję, `POST /api/sync` oraz import JSON i
+CSV.
 
 ## Endpointy
 
@@ -234,8 +249,8 @@ jako `unchanged`, a brakujący snapshot tworzony ze źródłem `actual-budget`.
 Nowy wpis walutowy zapisuje historyczny kurs NBP zgodnie ze zwykłym mechanizmem
 snapshotów. Po paczce przeliczane jest `next_update` każdego dotkniętego konta.
 
-Datą rozpoczęcia synchronizacji konta jest data jego pierwszego utworzonego
-snapshotu, rozpoznawanego po najniższym ID. Wpisy wcześniejsze nie są błędami:
+Datą rozpoczęcia synchronizacji konta jest najstarsza data jego snapshotu;
+przy remisie rozstrzyga najniższe ID. Wpisy wcześniejsze nie są błędami:
 zwiększają licznik `skipped` i trafiają do `ignored` z powodem
 `before_tracking_start`. Siedmiodniowe okno n8n może dzięki temu pozostać stałe
 bez dopisywania historii sprzed rozpoczęcia śledzenia. Aktualizacja istniejącego
@@ -280,8 +295,9 @@ pip install -r requirements-dev.txt
 PYTHONPATH=. pytest -q
 ```
 
-Testy obejmują dashboard, raporty, konta, snapshoty, archiwizację, ustawienia,
-cele, waluty, kurs snapshotu, import i eksport.
+Testy obejmują dashboard, raporty bez dostępu do sieci, konta, snapshoty,
+archiwizację, ustawienia, cele, waluty, cache kursów bez duplikatów, walidację
+dat przyszłych, synchronizację, import i eksport.
 
 Uruchomienie bez Dockera:
 

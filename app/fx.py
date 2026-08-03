@@ -16,10 +16,16 @@ def set_setting(db: Session, key: str, value: str) -> None:
         setting.value = value
     else:
         db.add(AppSetting(key=key, value=value))
+        db.flush()
 
 
 def rate_to_pln(
-    currency: str, day: date, db: Session, *, force_refresh: bool = False
+    currency: str,
+    day: date,
+    db: Session,
+    *,
+    force_refresh: bool = False,
+    allow_network: bool = True,
 ) -> tuple[float, date]:
     """Return and cache the last NBP fixing available on or before ``day``."""
     code = currency.upper()
@@ -46,6 +52,15 @@ def rate_to_pln(
         and cached.effective_date >= lookup_day - timedelta(days=10)
     ):
         return cached.rate_to_pln, cached.effective_date
+
+    if not allow_network:
+        if cached:
+            return cached.rate_to_pln, cached.effective_date
+        raise HTTPException(
+            503,
+            f"Brak lokalnego kursu {code} dla {lookup_day.isoformat()}. "
+            "Odśwież kursy w ustawieniach.",
+        )
 
     end = lookup_day
     start = end - timedelta(days=10)
@@ -87,6 +102,7 @@ def rate_to_pln(
                     table=table,
                 )
             )
+            db.flush()
         set_setting(db, f"fx_last_checked_{code}", datetime.now(UTC).isoformat())
         set_setting(
             db,
@@ -109,5 +125,7 @@ def convert_from_pln(
 ) -> float:
     if base_currency == "PLN":
         return amount_pln
-    base_rate, _ = rate_to_pln(base_currency, day, db)
+    base_rate, _ = rate_to_pln(
+        base_currency, day, db, allow_network=False
+    )
     return amount_pln / base_rate

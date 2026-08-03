@@ -123,6 +123,9 @@ ostatni kurs średni NBP dostępny dla wskazanej daty i zapisuje go lokalnie.
 Weekend lub święto korzysta z ostatniego wcześniejszego notowania. Zmiana
 waluty bazowej wpływa na prezentację i raporty, ale nie zmienia oryginalnych
 kwot. Aktywność pokazuje kurs oraz datę tabeli NBP użyte dla każdego snapshotu.
+Kursy potrzebne dla istniejącej historii są przygotowywane podczas zmiany
+waluty bazowej. Dashboard i raporty korzystają wyłącznie z lokalnego cache i
+nie wykonują blokujących zapytań do NBP podczas odczytu.
 
 Główne sumy na dashboardzie są zaokrąglane do pełnych jednostek waluty, żeby
 pozostały czytelne. Widoki kont i raportów pokazują część dziesiętną, gdy jest
@@ -135,6 +138,11 @@ używa etykiet `RRRR-MM`, maksymalnie jednej na miesiąc, a najechanie na linię
 pokazuje pełną datę i dokładną wartość punktu. Zmiany procentowe zachowują
 kierunek także przy ujemnej wartości netto — pogłębienie zadłużenia jest
 spadkiem, nie dodatnim wynikiem.
+
+Zmiana prezentowana w podsumowaniu dashboardu porównuje dwa ostatnie globalne
+punkty osi czasu. Nie sumuje zmian kont wykonanych w różnych terminach.
+Snapshoty, wpisy synchronizacji i importy z datą przyszłą są odrzucane, aby
+dashboard i raporty korzystały z tego samego zakresu danych.
 
 Pierwszy zapis wartości w obcej walucie wymaga dostępu kontenera do
 `https://api.nbp.pl`.
@@ -161,7 +169,7 @@ Synchronizacja jest idempotentna dla pary `konto + data`:
 - brak snapshotu tworzy nowy wpis ze źródłem `actual-budget`;
 - zmienione saldo aktualizuje istniejący wpis;
 - identyczne saldo pozostaje bez zmian;
-- data wcześniejsza niż pierwszy utworzony snapshot konta jest pomijana;
+- data wcześniejsza niż najstarszy datą snapshot konta jest pomijana;
 - brakujące, zarchiwizowane lub niejednoznaczne konto trafia do `errors` i nie
   zatrzymuje pozostałych elementów paczki.
 
@@ -196,9 +204,9 @@ Przykładowa odpowiedź:
 
 Workflow może codziennie przesyłać ponownie np. siedem ostatnich dni. Dzięki
 upsertowi transakcja dodana z opóźnieniem do Actual Budget skoryguje historię,
-a niezmienione salda nie utworzą duplikatów. Granicą historii jest data
-pierwszego snapshotu utworzonego dla konta (snapshot o najniższym ID), więc
-synchronizacja nie dopisze sald sprzed rozpoczęcia śledzenia. `value` musi być nieujemną kwotą
+a niezmienione salda nie utworzą duplikatów. Granicą historii jest najstarsza
+data snapshotu konta, niezależnie od kolejności jego utworzenia. Synchronizacja
+nie dopisze sald sprzed tej daty. `value` musi być nieujemną kwotą
 w natywnej walucie konta Worthly. Opcjonalne pole `currency` jest porównywane
 z walutą konta i chroni przed zapisaniem salda PLN jako liczby EUR lub USD.
 Jeśli pole zostanie pominięte, API zakłada natywną walutę konta dla zgodności
