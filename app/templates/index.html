@@ -251,12 +251,13 @@
     <div class="modal-backdrop" id="goalModal" hidden>
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="goalModalTitle">
         <header class="modal-header">
-          <div><h2 id="goalModalTitle">Nowy cel finansowy</h2><p>Cel jest porównywany z bieżącą wartością netto.</p></div>
+          <div><h2 id="goalModalTitle">Nowy cel finansowy</h2><p>Wybierz dzień, od którego chcesz mierzyć postęp.</p></div>
           <button class="icon-button close-modal" aria-label="Zamknij">×</button>
         </header>
         <form id="goalForm" class="form">
           <label>Nazwa celu<input name="name" required maxlength="120" placeholder="np. Wartość netto 500 000 zł"></label>
           <label>Docelowa wartość netto<div class="money-input"><input name="target_amount" required type="number" step="0.01"><span id="goalCurrency">PLN</span></div></label>
+          <label>Data startu<input name="start_date" required type="date"><small>Wartość początkowa zostanie obliczona ze stanu kont na ten dzień.</small></label>
           <label>Termin <small>(opcjonalnie)</small><input name="target_date" type="date"></label>
           <footer class="form-actions"><button type="button" class="button secondary close-modal">Anuluj</button><button class="button primary">Dodaj cel</button></footer>
         </form>

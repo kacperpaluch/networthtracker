@@ -96,11 +96,13 @@ class SettingsUpdate(BaseModel):
 class GoalCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     target_amount: float
+    start_date: date = Field(default_factory=date.today)
     target_date: date | None = None
 
 
 class GoalUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     target_amount: float | None = None
+    start_date: date | None = None
     target_date: date | None = None
     completed: bool | None = None

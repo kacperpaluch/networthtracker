@@ -574,11 +574,21 @@ button { cursor: pointer; }
 .history-summary strong { display: inline-block; font-size: 16px; margin-top: 4px; }
 .history-chart { height: 240px; margin-top: 18px; }
 .history-chart canvas { height: 100%; width: 100%; }
+.history-toolbar { align-items: end; display: flex; gap: 14px; justify-content: space-between; margin-top: 18px; }
+.history-presets { background: #f3f3ef; border-radius: 8px; display: flex; padding: 3px; }
+.history-presets button { background: none; border: 0; border-radius: 6px; color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 700; padding: 8px 11px; }
+.history-presets button.active { background: white; box-shadow: 0 1px 4px #0001; color: var(--green); }
+.history-filters { align-items: end; display: flex; gap: 8px; }
+.history-filters label { color: var(--muted); display: grid; font-size: 8px; gap: 3px; }
+.history-filters input { border: 1px solid var(--line); border-radius: 7px; font: inherit; padding: 7px 9px; }
+.history-empty { margin-top: 18px; }
 .history-table { border: 1px solid var(--line); border-radius: 10px; margin-top: 17px; max-height: 240px; overflow: auto; }
 .history-row { align-items: center; border-bottom: 1px solid var(--line); display: grid; font-size: 9px; gap: 10px; grid-template-columns: 110px 1fr 105px 110px 28px; min-height: 42px; padding: 0 13px; }
 .history-row.head { background: #f8f8f5; color: var(--muted); font-size: 8px; font-weight: 700; position: sticky; text-transform: uppercase; top: 0; }
 .history-row span:nth-child(3), .history-row strong { text-align: right; }
 .history-row .note { color: var(--muted); }
+.history-pagination { align-items: center; color: var(--muted); display: flex; font-size: 9px; justify-content: space-between; margin-top: 10px; }
+.history-pagination > div { display: flex; gap: 7px; }
 .snapshot-action { background: none; border: 0; color: var(--muted); font-size: 14px; padding: 4px; }
 .snapshot-action:hover { color: var(--green); }
 
@@ -754,6 +764,9 @@ button { cursor: pointer; }
   .balance-donut { margin: auto; max-width: 280px; width: 100%; }
   .history-summary { align-items: flex-start; grid-template-columns: 1fr 1fr; }
   .history-summary .button { grid-column: 1/-1; }
+  .history-toolbar { align-items: stretch; flex-direction: column; }
+  .history-filters { display: grid; grid-template-columns: 1fr 1fr; }
+  .history-filters .button { grid-column: 1/-1; }
   .history-row { grid-template-columns: 85px 1fr 95px 28px; }
   .history-row > *:nth-child(2) { display: none; }
   .settings-footer { align-items: flex-start; flex-direction: column; gap: 12px; }

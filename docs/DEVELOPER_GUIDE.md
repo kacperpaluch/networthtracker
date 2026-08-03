@@ -123,9 +123,23 @@ frontendu ani drugiej aplikacji. Katalog `backend/` tworzyłby zbędny poziom.
 | `source` | `manual`, `actual-budget`, `seed` albo `import` |
 
 `AppSetting` przechowuje walutę bazową i format dat. `Goal` przechowuje docelową
-wartość netto oraz `start_amount` z chwili utworzenia celu; obie kwoty są
-normalizowane do PLN. Dzięki temu postęp działa również między wartościami
-ujemnymi. `ExchangeRate` jest lokalnym cache NBP z unikalną parą waluta–data.
+wartość netto, wybraną `start_date` oraz wyliczone dla niej `start_amount`.
+Kwoty celu są normalizowane do PLN. Migracja SQLite uzupełnia `start_date`
+istniejących celów datą ich utworzenia. Dzięki temu postęp działa również
+między wartościami ujemnymi. `ExchangeRate` jest lokalnym cache NBP z unikalną
+parą waluta–data.
+
+Dashboard zwraca pełną linię czasu. Frontend filtruje ją według kalendarzowych
+zakresów 6 lub 12 miesięcy albo pokazuje całość, rozmieszcza punkty według ich
+rzeczywistych dat i rysuje jedną etykietę `RRRR-MM` na miesiąc. Wykres canvas
+obsługuje tooltip z pełną datą i dokładną wartością najbliższego punktu.
+Ten sam renderer obsługuje wykres pojedynczego konta. Modal konta filtruje
+snapshoty klientowo według zakresów 3M/6M/1R/MAX lub własnych dat i dzieli
+tabelę historii na strony po 10 wpisów.
+Raport roczny rozpoczyna listę miesięcy od pierwszego snapshotu dostępnego w
+pierwszym roku danych; nie generuje wcześniejszych miesięcy z fikcyjnym zerem.
+Zmiana procentowa używa bezwzględnej wartości bazowej jako mianownika, dzięki
+czemu znak wynika z faktycznego kierunku zmiany również dla wartości ujemnych.
 
 ## Reguły finansowe
 

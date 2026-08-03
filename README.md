@@ -12,11 +12,11 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - osobny harmonogram aktualizacji każdego konta;
 - przypomnienia i oznaczenia nieaktualnych kont;
 - snapshoty salda z datą, notatką i wyróżnieniem istotnej zmiany;
-- historia konta z wykresem oraz korektą i usuwaniem wpisów;
+- historia konta z interaktywnym wykresem, zakresami 3M/6M/1R/MAX, filtrem dat, stronicowaniem oraz korektą i usuwaniem wpisów;
 - pełna aktywność z filtrowaniem dat, kont i źródeł oraz stronicowaniem;
-- dashboard wartości netto, aktywów, zadłużenia i alokacji;
-- raport miesięczny, raport roczny i porównania rok do roku;
-- cele finansowe z terminem i postępem liczonym od wartości netto w chwili utworzenia, także dla wartości ujemnych;
+- dashboard wartości netto, aktywów, zadłużenia i alokacji, z wykresem 6M/1R/MAX oraz dokładnymi wartościami po najechaniu;
+- raport miesięczny, raport roczny od pierwszego rzeczywistego miesiąca danych i porównania rok do roku;
+- cele finansowe z wybieraną datą oraz historyczną wartością początkową, także dla wartości ujemnych;
 - konta w PLN, EUR, USD, GBP i CHF;
 - historyczne kursy średnie z NBP zapisywane przy snapshotach;
 - idempotentna synchronizacja sald z Actual Budget i n8n;
@@ -128,6 +128,13 @@ Główne sumy na dashboardzie są zaokrąglane do pełnych jednostek waluty, że
 pozostały czytelne. Widoki kont i raportów pokazują część dziesiętną, gdy jest
 potrzebna, a Aktywność i historia kont zawsze prezentują dokładne kwoty z dwoma
 miejscami po przecinku.
+
+Zakresy wykresu wartości netto są liczone kalendarzowo: `6M` obejmuje ostatnie
+6 miesięcy, `1R` ostatnie 12 miesięcy, a `MAX` całą dostępną historię. Oś czasu
+używa etykiet `RRRR-MM`, maksymalnie jednej na miesiąc, a najechanie na linię
+pokazuje pełną datę i dokładną wartość punktu. Zmiany procentowe zachowują
+kierunek także przy ujemnej wartości netto — pogłębienie zadłużenia jest
+spadkiem, nie dodatnim wynikiem.
 
 Pierwszy zapis wartości w obcej walucie wymaga dostępu kontenera do
 `https://api.nbp.pl`.

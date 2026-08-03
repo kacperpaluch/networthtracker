@@ -7,11 +7,11 @@ bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 ## Funkcje
 
 - aktywa i zobowiązania z edycją waluty, archiwizacją i usuwaniem kont;
-- snapshoty z historią, wykresami, notatkami oraz kursem i datą tabeli NBP;
+- snapshoty z filtrowaną i stronicowaną historią, interaktywnymi wykresami kont oraz notatkami i kursem NBP;
 - pełna aktywność z filtrowaniem dat, kont i źródeł oraz stronicowaniem;
 - dokładne kwoty w historii i czytelnie zaokrąglone podsumowanie dashboardu;
-- raporty miesięczne i roczne oraz porównania r/r;
-- cele finansowe liczone od wartości początkowej, także dla ujemnej wartości netto;
+- raporty miesięczne i roczne ograniczone do rzeczywistego okresu danych oraz poprawne porównania wartości ujemnych;
+- cele finansowe z wybieraną datą i historyczną wartością początkową, także dla ujemnej wartości netto;
 - aktywa vs zobowiązania i udziały procentowe;
 - PLN, EUR, USD, GBP i CHF z historycznymi kursami NBP oraz poprawną obsługą weekendów i świąt;
 - eksport/import JSON i eksport CSV;

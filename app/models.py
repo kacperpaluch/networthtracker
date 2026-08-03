@@ -61,6 +61,7 @@ class Goal(Base):
     name: Mapped[str] = mapped_column(String(120))
     target_amount: Mapped[float] = mapped_column(Float)
     start_amount: Mapped[float] = mapped_column(Float, default=0)
+    start_date: Mapped[date] = mapped_column(Date, default=date.today)
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(

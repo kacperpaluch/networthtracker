@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.main import env_flag
 from app.main import goal_progress
+from app.main import percent_change
 from app.main import STATIC_VERSION
 from app.database import SessionLocal
 from app.fx import rate_to_pln
@@ -572,6 +573,33 @@ def test_negative_net_worth_goal_uses_creation_value_as_start():
     assert exported_goal["start_amount"] == current_net
     assert goal_progress(-50000, -45000, -40000) == 50
     assert goal_progress(-50000, -40000, -40000) == 100
+
+
+def test_negative_net_worth_percent_keeps_change_direction():
+    assert percent_change(-1579.50, -50744.38) == -3.11
+    assert percent_change(1579.50, -52323.88) == 3.02
+
+
+def test_financial_goal_can_start_at_historical_date():
+    timeline = client.get("/api/dashboard").json()["timeline"]
+    start_point = timeline[len(timeline) // 2]
+    created = client.post(
+        "/api/goals",
+        json={
+            "name": "Cel od wybranej daty",
+            "target_amount": start_point["netWorth"] + 10000,
+            "start_date": start_point["date"],
+        },
+    )
+    assert created.status_code == 201
+    goal = next(
+        item
+        for item in client.get("/api/goals").json()
+        if item["id"] == created.json()["id"]
+    )
+    assert goal["startDate"] == start_point["date"]
+    assert goal["startAmount"] == start_point["netWorth"]
+    assert client.delete(f"/api/goals/{goal['id']}").status_code == 204
 
 
 def test_annual_report_and_year_over_year():

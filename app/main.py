@@ -81,6 +81,11 @@ def migrate_sqlite_schema() -> None:
                     "NOT NULL DEFAULT 0.0"
                 )
             )
+        if "start_date" not in goal_columns:
+            connection.execute(text("ALTER TABLE goals ADD COLUMN start_date DATE"))
+            connection.execute(
+                text("UPDATE goals SET start_date = DATE(created_at)")
+            )
         connection.execute(
             text(
                 "UPDATE snapshots SET rate_date = snapshot_date "
@@ -159,6 +164,7 @@ def goal_response(
         "name": goal.name,
         "targetAmount": round(target, 2),
         "startAmount": round(start, 2),
+        "startDate": goal.start_date.isoformat(),
         "targetDate": goal.target_date.isoformat() if goal.target_date else None,
         "completed": goal.completed,
         "currentAmount": round(current_net, 2),
@@ -173,11 +179,25 @@ def goal_progress(start: float, current: float, target: float) -> float:
     return round(max(0, min(100, (current - start) / distance * 100)), 1)
 
 
+def percent_change(change: float, baseline: float) -> float:
+    """Keep the direction of the change even when the baseline is negative."""
+    return round(change / abs(baseline) * 100, 2) if baseline else 0
+
+
 def current_net_worth(db: Session, base_currency: str) -> float:
     value = 0.0
     accounts = db.query(Account).filter(Account.archived.is_(False)).all()
     for account in accounts:
         balance = account_response(account, db, base_currency).current_balance
+        value += balance if account.kind == "asset" else -balance
+    return value
+
+
+def net_worth_at(cutoff: date, db: Session, base_currency: str) -> float:
+    value = 0.0
+    accounts = db.query(Account).filter(Account.archived.is_(False)).all()
+    for account in accounts:
+        balance = balance_at(account.id, cutoff, base_currency, db)
         value += balance if account.kind == "asset" else -balance
     return value
 
@@ -596,7 +616,7 @@ def dashboard(db: Session = Depends(get_db)):
             "assets": round(current_assets, 2),
             "liabilities": round(current_liabilities, 2),
             "change": round(current_net - previous_net, 2),
-            "changePercent": round(((current_net - previous_net) / previous_net * 100), 2) if previous_net else 0,
+            "changePercent": percent_change(current_net - previous_net, previous_net),
             "overdue": overdue,
             "updatedAt": max((item.snapshot_date for item in snapshots), default=date.today()).isoformat(),
             "baseCurrency": base_currency,
@@ -793,14 +813,12 @@ def monthly_report(month: str, db: Session = Depends(get_db)):
         "liabilities": round(current_liabilities, 2),
         "previousNetWorth": round(previous_net, 2),
         "change": round(net_change, 2),
-        "changePercent": round(net_change / previous_net * 100, 2) if previous_net else 0,
+        "changePercent": percent_change(net_change, previous_net),
         "yearBeforeNetWorth": round(year_before_net, 2),
         "yearOverYear": round(current_net - year_before_net, 2),
-        "yearOverYearPercent": round(
-            (current_net - year_before_net) / year_before_net * 100, 2
-        )
-        if year_before_net
-        else 0,
+        "yearOverYearPercent": percent_change(
+            current_net - year_before_net, year_before_net
+        ),
         "assetChange": round(current_assets - previous_assets, 2),
         "liabilityChange": round(current_liabilities - previous_liabilities, 2),
         "accounts": sorted(contributions, key=lambda item: abs(item["contribution"]), reverse=True),
@@ -812,16 +830,28 @@ def annual_report(year: int, db: Session = Depends(get_db)):
     if year < 2002 or year > date.today().year:
         raise HTTPException(422, "Nieprawidłowy rok raportu")
     last_month = date.today().month if year == date.today().year else 12
+    first_snapshot = (
+        db.query(Snapshot)
+        .join(Account)
+        .filter(Account.archived.is_(False))
+        .order_by(Snapshot.snapshot_date, Snapshot.id)
+        .first()
+    )
+    if not first_snapshot or first_snapshot.snapshot_date.year > year:
+        raise HTTPException(404, "Brak danych dla wybranego roku")
+    first_month = first_snapshot.snapshot_date.month if first_snapshot.snapshot_date.year == year else 1
     months = [
         monthly_report(f"{year}-{month:02d}", db)
-        for month in range(1, last_month + 1)
+        for month in range(first_month, last_month + 1)
     ]
     year_end = months[-1]
-    previous_year_start = monthly_report(f"{year - 1}-12", db)
     previous_year_comparison = monthly_report(
         f"{year - 1}-{last_month:02d}", db
     )
-    start_net = previous_year_start["netWorth"]
+    if first_month == 1:
+        start_net = monthly_report(f"{year - 1}-12", db)["netWorth"]
+    else:
+        start_net = months[0]["netWorth"]
     end_net = year_end["netWorth"]
     change = end_net - start_net
     return {
@@ -832,28 +862,26 @@ def annual_report(year: int, db: Session = Depends(get_db)):
         "liabilities": year_end["liabilities"],
         "startNetWorth": start_net,
         "change": round(change, 2),
-        "changePercent": round(change / start_net * 100, 2) if start_net else 0,
+        "changePercent": percent_change(change, start_net),
         "previousYearNetWorth": previous_year_comparison["netWorth"],
         "yearOverYear": round(
             end_net - previous_year_comparison["netWorth"], 2
         ),
-        "yearOverYearPercent": round(
-            (end_net - previous_year_comparison["netWorth"])
-            / previous_year_comparison["netWorth"]
-            * 100,
-            2,
-        )
-        if previous_year_comparison["netWorth"]
-        else 0,
+        "yearOverYearPercent": percent_change(
+            end_net - previous_year_comparison["netWorth"],
+            previous_year_comparison["netWorth"],
+        ),
         "months": [
             {
-                "date": f"{year}-{index:02d}-01",
+                "date": f"{year}-{month_number:02d}-01",
                 "netWorth": item["netWorth"],
                 "assets": item["assets"],
                 "liabilities": item["liabilities"],
-                "change": item["change"],
+                "change": None if index == 0 and first_month > 1 else item["change"],
             }
-            for index, item in enumerate(months, 1)
+            for index, (month_number, item) in enumerate(
+                zip(range(first_month, last_month + 1), months)
+            )
         ],
     }
 
@@ -909,9 +937,20 @@ def list_goals(db: Session = Depends(get_db)):
 def create_goal(payload: GoalCreate, db: Session = Depends(get_db)):
     values = payload.model_dump()
     base_currency = get_setting(db, "base_currency", "PLN")
-    rate, _ = rate_to_pln(base_currency, date.today(), db)
-    values["target_amount"] *= rate
-    values["start_amount"] = current_net_worth(db, base_currency) * rate
+    explicit_start_date = "start_date" in payload.model_fields_set
+    if payload.start_date > date.today():
+        raise HTTPException(422, "Data startu celu nie może być w przyszłości")
+    if not db.query(Snapshot).filter(Snapshot.snapshot_date <= payload.start_date).first():
+        raise HTTPException(422, "Brak danych o wartości netto na wybraną datę startu")
+    target_rate, _ = rate_to_pln(base_currency, date.today(), db)
+    start_rate, _ = rate_to_pln(base_currency, payload.start_date, db)
+    values["target_amount"] *= target_rate
+    start_value = (
+        net_worth_at(payload.start_date, db, base_currency)
+        if explicit_start_date
+        else current_net_worth(db, base_currency)
+    )
+    values["start_amount"] = start_value * start_rate
     goal = Goal(**values)
     db.add(goal)
     db.commit()
@@ -924,7 +963,17 @@ def update_goal(goal_id: int, payload: GoalUpdate, db: Session = Depends(get_db)
     goal = db.get(Goal, goal_id)
     if not goal:
         raise HTTPException(404, "Nie znaleziono celu")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    if "start_date" in updates:
+        start_date = updates["start_date"]
+        if start_date is None or start_date > date.today():
+            raise HTTPException(422, "Data startu celu nie może być w przyszłości")
+        if not db.query(Snapshot).filter(Snapshot.snapshot_date <= start_date).first():
+            raise HTTPException(422, "Brak danych o wartości netto na wybraną datę startu")
+        base_currency = get_setting(db, "base_currency", "PLN")
+        rate, _ = rate_to_pln(base_currency, start_date, db)
+        goal.start_amount = net_worth_at(start_date, db, base_currency) * rate
+    for key, value in updates.items():
         if key == "target_amount" and value is not None:
             base_currency = get_setting(db, "base_currency", "PLN")
             rate, _ = rate_to_pln(base_currency, date.today(), db)
@@ -1171,6 +1220,10 @@ def import_json(payload: dict, mode: str = "merge", db: Session = Depends(get_db
                 name=name,
                 target_amount=float(item.get("target_amount", 0)),
                 start_amount=float(item.get("start_amount", 0)),
+                start_date=_parse_date(
+                    item.get("start_date") or item.get("created_at") or date.today(),
+                    "start_date",
+                ),
                 target_date=_parse_date(
                     item.get("target_date"), "target_date", optional=True
                 ),
