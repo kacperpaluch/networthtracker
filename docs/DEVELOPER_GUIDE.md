@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.4.1` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.5.0` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
@@ -131,6 +131,13 @@ istniejących celów datą ich utworzenia. Dzięki temu postęp działa równie�
 między wartościami ujemnymi. `ExchangeRate` jest lokalnym cache NBP z unikalną
 parą waluta–data.
 
+Odpowiedź celu zawiera również `remainingAmount`, `gainedAmount`,
+`timeProgress`, `paceStatus`, `monthlyPace`, `requiredMonthlyChange` i
+`estimatedCompletionDate`. Tempo jest normalizowane do średniego miesiąca
+30,4375 dnia. Status względem planu porównuje postęp finansowy i czasowy z
+tolerancją 3 punktów procentowych. Prognoza daty jest zwracana tylko dla
+dodatniego tempa prowadzącego w stronę celu i maksymalnego horyzontu 50 lat.
+
 Dashboard zwraca pełną linię czasu. Frontend filtruje ją według kalendarzowych
 zakresów 6 lub 12 miesięcy albo pokazuje całość, rozmieszcza punkty według ich
 rzeczywistych dat i rysuje jedną etykietę `RRRR-MM` na miesiąc. Wykres canvas
@@ -145,6 +152,11 @@ czemu znak wynika z faktycznego kierunku zmiany również dla wartości ujemnych
 Pole `summary.change` porównuje dwa ostatnie globalne punkty timeline, dzięki
 czemu nie miesza przedostatnich snapshotów poszczególnych kont. Timeline jest
 budowany w jednym przebiegu po chronologicznie pogrupowanych snapshotach.
+Pole `statistics` dashboardu zawiera zmiany okresowe, średnią z maksymalnie 12
+zmian miesięcznych, najlepszy miesiąc, liczbę miesięcy wzrostowych, zmianę
+zobowiązań, rekord oraz liniową prognozę na 12 miesięcy. Miesiące bez nowego
+snapshotu przenoszą ostatnią znaną wartość. Metryka okresowa pozostaje `null`,
+jeśli przed datą graniczną nie ma rzeczywistego punktu odniesienia.
 
 ## Reguły finansowe
 

@@ -11,8 +11,9 @@ bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 - pełna aktywność z filtrowaniem dat, kont i źródeł oraz stronicowaniem;
 - dokładne kwoty w historii i czytelnie zaokrąglone podsumowanie dashboardu;
 - globalna zmiana wartości netto liczona między spójnymi punktami czasu;
+- panel statystyk z trendami 30 dni/6 miesięcy/12 miesięcy, średnim tempem, najlepszym miesiącem, zmianą zadłużenia, rekordem i prognozą;
 - raporty miesięczne i roczne ograniczone do rzeczywistego okresu danych oraz poprawne porównania wartości ujemnych;
-- cele finansowe z wybieraną datą i historyczną wartością początkową, także dla ujemnej wartości netto;
+- cele finansowe z pozostałą kwotą, analizą tempa, statusem względem planu, prognozowanym terminem i wykresem rzeczywistość–plan;
 - aktywa vs zobowiązania i udziały procentowe;
 - PLN, EUR, USD, GBP i CHF z trwałym cache NBP; dashboard i raporty działają bez zapytań sieciowych;
 - eksport/import JSON i eksport CSV;

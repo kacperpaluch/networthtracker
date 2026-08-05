@@ -108,7 +108,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.4.1")
+app = FastAPI(title="Worthly", version="1.5.0")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -175,6 +175,52 @@ def goal_response(
     current_for_goal = convert_from_pln(
         current_net_pln, base_currency, date.today(), db
     )
+    progress = goal_progress(
+        goal.start_amount, current_net_pln, goal.target_amount
+    )
+    direction = 1 if goal.target_amount >= goal.start_amount else -1
+    remaining_pln = max(
+        0.0, (goal.target_amount - current_net_pln) * direction
+    )
+    gained_pln = (current_net_pln - goal.start_amount) * direction
+    remaining = convert_from_pln(
+        remaining_pln, base_currency, date.today(), db
+    )
+    gained = convert_from_pln(
+        gained_pln, base_currency, date.today(), db
+    )
+
+    elapsed_days = max(0, (date.today() - goal.start_date).days)
+    monthly_pace = (
+        gained / elapsed_days * 30.4375 if elapsed_days else None
+    )
+    estimated_date = None
+    if remaining > 0 and monthly_pace is not None and monthly_pace > 0:
+        projected_days = round(remaining / monthly_pace * 30.4375)
+        if projected_days <= 365 * 50:
+            estimated_date = (date.today() + timedelta(days=projected_days)).isoformat()
+
+    time_progress = None
+    required_monthly = None
+    pace_status = "no_deadline"
+    if goal.target_date:
+        total_days = (goal.target_date - goal.start_date).days
+        time_progress = round(
+            max(0, min(100, elapsed_days / total_days * 100)), 1
+        ) if total_days > 0 else 100.0
+    if progress >= 100 or goal.completed:
+        pace_status = "completed"
+    elif goal.target_date:
+        remaining_days = (goal.target_date - date.today()).days
+        if remaining_days > 0:
+            required_monthly = remaining / remaining_days * 30.4375
+            pace_delta = progress - time_progress
+            pace_status = (
+                "ahead" if pace_delta > 3 else "behind" if pace_delta < -3 else "on_track"
+            )
+        else:
+            pace_status = "overdue"
+
     return {
         "id": goal.id,
         "name": goal.name,
@@ -184,9 +230,16 @@ def goal_response(
         "targetDate": goal.target_date.isoformat() if goal.target_date else None,
         "completed": goal.completed,
         "currentAmount": round(current_for_goal, 2),
-        "progress": goal_progress(
-            goal.start_amount, current_net_pln, goal.target_amount
+        "progress": progress,
+        "remainingAmount": round(remaining, 2),
+        "gainedAmount": round(gained, 2),
+        "timeProgress": time_progress,
+        "paceStatus": pace_status,
+        "monthlyPace": round(monthly_pace, 2) if monthly_pace is not None else None,
+        "requiredMonthlyChange": (
+            round(required_monthly, 2) if required_monthly is not None else None
         ),
+        "estimatedCompletionDate": estimated_date,
     }
 
 
@@ -200,6 +253,102 @@ def goal_progress(start: float, current: float, target: float) -> float:
 def percent_change(change: float, baseline: float) -> float:
     """Keep the direction of the change even when the baseline is negative."""
     return round(change / abs(baseline) * 100, 2) if baseline else 0
+
+
+def shift_month(day: date, months: int) -> date:
+    month_index = day.year * 12 + day.month - 1 + months
+    year, month_zero = divmod(month_index, 12)
+    month = month_zero + 1
+    return date(year, month, min(day.day, monthrange(year, month)[1]))
+
+
+def timeline_value_at(
+    timeline: list[dict], cutoff: date, key: str = "netWorth"
+) -> float | None:
+    value = None
+    for point in timeline:
+        if date.fromisoformat(point["date"]) > cutoff:
+            break
+        value = point[key]
+    return value
+
+
+def dashboard_statistics(timeline: list[dict]) -> dict:
+    empty = {
+        "change30Days": None,
+        "change6Months": None,
+        "change12Months": None,
+        "averageMonthlyChange": None,
+        "bestMonth": None,
+        "growingMonths": 0,
+        "observedMonths": 0,
+        "liabilityChange12Months": None,
+        "projectedNetWorth12Months": None,
+        "recordNetWorth": None,
+        "isAtRecord": False,
+    }
+    if not timeline:
+        return empty
+
+    anchor = date.fromisoformat(timeline[-1]["date"])
+    current = timeline[-1]["netWorth"]
+
+    def period_change(cutoff: date, key: str = "netWorth") -> dict | None:
+        baseline = timeline_value_at(timeline, cutoff, key)
+        if baseline is None:
+            return None
+        latest = timeline[-1][key]
+        change = round(latest - baseline, 2)
+        return {
+            "amount": change,
+            "percent": percent_change(change, baseline),
+            "from": cutoff.isoformat(),
+        }
+
+    monthly_points = []
+    for offset in range(-12, 1):
+        month = shift_month(anchor.replace(day=1), offset)
+        month_end = date(month.year, month.month, monthrange(month.year, month.month)[1])
+        if offset == 0:
+            month_end = anchor
+        value = timeline_value_at(timeline, month_end)
+        if value is not None:
+            monthly_points.append({"month": month.strftime("%Y-%m"), "value": value})
+
+    monthly_changes = []
+    for previous, current_month in zip(monthly_points, monthly_points[1:]):
+        if previous["month"] == current_month["month"]:
+            continue
+        monthly_changes.append(
+            {
+                "month": current_month["month"],
+                "amount": round(current_month["value"] - previous["value"], 2),
+            }
+        )
+    best_month = max(monthly_changes, key=lambda item: item["amount"], default=None)
+    average = (
+        round(sum(item["amount"] for item in monthly_changes) / len(monthly_changes), 2)
+        if monthly_changes
+        else None
+    )
+    record = max(point["netWorth"] for point in timeline)
+    liability_change = period_change(shift_month(anchor, -12), "liabilities")
+
+    return {
+        "change30Days": period_change(anchor - timedelta(days=30)),
+        "change6Months": period_change(shift_month(anchor, -6)),
+        "change12Months": period_change(shift_month(anchor, -12)),
+        "averageMonthlyChange": average,
+        "bestMonth": best_month,
+        "growingMonths": sum(1 for item in monthly_changes if item["amount"] > 0),
+        "observedMonths": len(monthly_changes),
+        "liabilityChange12Months": liability_change,
+        "projectedNetWorth12Months": (
+            round(current + average * 12, 2) if average is not None else None
+        ),
+        "recordNetWorth": round(record, 2),
+        "isAtRecord": current >= record,
+    }
 
 
 def net_worth_at_pln(cutoff: date, db: Session) -> float:
@@ -650,6 +799,7 @@ def dashboard(db: Session = Depends(get_db)):
             "exchangeRates": exchange_rate_status(db, accounts),
         },
         "timeline": timeline,
+        "statistics": dashboard_statistics(timeline),
         "allocation": allocation,
         "accounts": account_items,
         "recent": [

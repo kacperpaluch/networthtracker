@@ -9,6 +9,7 @@ Path("./data/test.db").unlink(missing_ok=True)
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.main import dashboard_statistics
 from app.main import env_flag
 from app.main import goal_progress
 from app.main import net_worth_at_pln
@@ -634,7 +635,14 @@ def test_financial_goal_lifecycle():
     assert created.status_code == 201
     goal_id = created.json()["id"]
     goals = client.get("/api/goals").json()
-    assert any(item["id"] == goal_id and item["progress"] >= 0 for item in goals)
+    goal = next(item for item in goals if item["id"] == goal_id)
+    assert goal["progress"] >= 0
+    assert goal["remainingAmount"] >= 0
+    assert goal["paceStatus"] in {
+        "ahead", "on_track", "behind", "overdue", "completed"
+    }
+    assert "requiredMonthlyChange" in goal
+    assert "estimatedCompletionDate" in goal
     completed = client.patch(f"/api/goals/{goal_id}", json={"completed": True})
     assert completed.status_code == 200
     assert client.delete(f"/api/goals/{goal_id}").status_code == 204
@@ -673,6 +681,51 @@ def test_negative_net_worth_goal_uses_creation_value_as_start():
 def test_negative_net_worth_percent_keeps_change_direction():
     assert percent_change(-1579.50, -50744.38) == -3.11
     assert percent_change(1579.50, -52323.88) == 3.02
+
+
+def test_dashboard_statistics_describe_growth_and_debt_reduction():
+    timeline = [
+        {
+            "date": "2025-08-01",
+            "netWorth": 100000,
+            "assets": 250000,
+            "liabilities": 150000,
+        },
+        {
+            "date": "2026-07-01",
+            "netWorth": 122000,
+            "assets": 260000,
+            "liabilities": 138000,
+        },
+        {
+            "date": "2026-08-01",
+            "netWorth": 126000,
+            "assets": 262000,
+            "liabilities": 136000,
+        },
+    ]
+
+    statistics = dashboard_statistics(timeline)
+
+    assert statistics["change12Months"]["amount"] == 26000
+    assert statistics["liabilityChange12Months"]["amount"] == -14000
+    assert statistics["averageMonthlyChange"] is not None
+    assert statistics["projectedNetWorth12Months"] > 126000
+    assert statistics["recordNetWorth"] == 126000
+    assert statistics["isAtRecord"] is True
+
+
+def test_dashboard_includes_statistics_payload():
+    statistics = client.get("/api/dashboard").json()["statistics"]
+    assert {
+        "change30Days",
+        "change6Months",
+        "change12Months",
+        "averageMonthlyChange",
+        "bestMonth",
+        "growingMonths",
+        "projectedNetWorth12Months",
+    }.issubset(statistics)
 
 
 def test_dashboard_change_uses_two_latest_global_timeline_points():

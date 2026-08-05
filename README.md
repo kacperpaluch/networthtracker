@@ -15,8 +15,9 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - historia konta z interaktywnym wykresem, zakresami 3M/6M/1R/MAX, filtrem dat, stronicowaniem oraz korektą i usuwaniem wpisów;
 - pełna aktywność z filtrowaniem dat, kont i źródeł oraz stronicowaniem;
 - dashboard wartości netto, aktywów, zadłużenia i alokacji, z wykresem 6M/1R/MAX oraz dokładnymi wartościami po najechaniu;
+- statystyki zmian za 30 dni, 6 i 12 miesięcy, średniego tempa miesięcznego, najlepszego miesiąca, zadłużenia, rekordu oraz prognozy wartości netto;
 - raport miesięczny, raport roczny od pierwszego rzeczywistego miesiąca danych i porównania rok do roku;
-- cele finansowe z wybieraną datą oraz historyczną wartością początkową, także dla wartości ujemnych;
+- rozbudowane cele finansowe z kwotą pozostałą do celu, tempem rzeczywistym i wymaganym, statusem względem planu, prognozą terminu oraz wykresem rzeczywistość–plan;
 - konta w PLN, EUR, USD, GBP i CHF;
 - historyczne kursy średnie z NBP zapisywane przy snapshotach;
 - idempotentna synchronizacja sald z Actual Budget i n8n;
@@ -143,6 +144,20 @@ Zmiana prezentowana w podsumowaniu dashboardu porównuje dwa ostatnie globalne
 punkty osi czasu. Nie sumuje zmian kont wykonanych w różnych terminach.
 Snapshoty, wpisy synchronizacji i importy z datą przyszłą są odrzucane, aby
 dashboard i raporty korzystały z tego samego zakresu danych.
+
+Blok statystyk jest wyliczany wyłącznie z zapisanej osi czasu. Średni miesięczny
+przyrost korzysta z maksymalnie 12 ostatnich zmian miesiąc do miesiąca, a
+prognoza wartości za rok jest prostą ekstrapolacją tego tempa. Brak pełnego
+okresu historycznego jest prezentowany jako brak danych, zamiast sztucznie
+przyjmowanej wartości zerowej. Statystyki nie pokazują stopy oszczędności,
+ponieważ aplikacja przechowuje salda, a nie komplet przychodów i wydatków.
+
+Karta celu porównuje procent osiągniętej zmiany wartości netto z procentem
+czasu, który upłynął od daty startu do terminu. Status „przed planem” lub „za
+planem” używa tolerancji 3 punktów procentowych. Tempo miesięczne jest liczone
+od dnia startu celu, wymagane tempo z pozostałej kwoty i czasu, a prognozowana
+data zakłada utrzymanie dotychczasowego średniego tempa. Są to prognozy liniowe,
+nie gwarancje wyniku inwestycyjnego.
 
 Pierwszy zapis wartości w obcej walucie wymaga dostępu kontenera do
 `https://api.nbp.pl`.

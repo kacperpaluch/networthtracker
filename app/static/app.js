@@ -54,6 +54,10 @@ const monthFormatter = new Intl.DateTimeFormat("pl-PL", {
   month: "long",
   year: "numeric",
 });
+const shortMonthFormatter = new Intl.DateTimeFormat("pl-PL", {
+  month: "short",
+  year: "numeric",
+});
 
 function dateValue(value) {
   return new Date(`${value}T12:00:00`);
@@ -118,6 +122,24 @@ function signed(value) {
 }
 function signedDetail(value) {
   return `${value > 0 ? "+" : value < 0 ? "−" : ""}${detailMoney.format(Math.abs(value))}`;
+}
+function monthLabel(value) {
+  return shortMonthFormatter.format(dateValue(`${value}-01`)).replace(" ", " ");
+}
+function goalStatus(goal) {
+  return ({
+    ahead: ["Przed planem", "positive"],
+    on_track: ["Zgodnie z planem", "positive"],
+    behind: ["Za planem", "negative"],
+    overdue: ["Po terminie", "negative"],
+    completed: ["Cel osiągnięty", "positive"],
+    no_deadline: ["Bez terminu", "neutral"],
+  })[goal.paceStatus] || ["Bez terminu", "neutral"];
+}
+function statisticChange(metric, empty = "Za mało danych") {
+  if (!metric) return `<strong>—</strong><small>${empty}</small>`;
+  const tone = metric.amount >= 0 ? "positive" : "negative";
+  return `<strong class="${tone}">${signed(metric.amount)}</strong><small>${metric.amount >= 0 ? "+" : ""}${metric.percent}%</small>`;
 }
 function showToast(message) {
   const toast = $("#toast");
@@ -201,7 +223,7 @@ function renderView() {
 }
 
 function renderDashboard() {
-  const { summary, accounts, allocation, goals } = state.dashboard;
+  const { summary, accounts, allocation, goals, statistics } = state.dashboard;
   const positive = summary.change >= 0;
   const total = summary.assets + summary.liabilities || 1;
   main.innerHTML = `
@@ -214,6 +236,19 @@ function renderDashboard() {
       <div class="hero-divider"></div>
       <div class="hero-stat"><span>Aktywa</span><strong>${summaryMoney.format(summary.assets)}</strong><small><i class="dot asset"></i>${Math.round(summary.assets / total * 100)}% całości</small></div>
       <div class="hero-stat"><span>Zobowiązania</span><strong>${summaryMoney.format(summary.liabilities)}</strong><small><i class="dot debt"></i>${Math.round(summary.liabilities / total * 100)}% całości</small></div>
+    </section>
+    <section class="statistics-panel" aria-label="Statystyki wartości netto">
+      <header><div><span class="eyebrow">◇ Statystyki</span><h2>Twój majątek w liczbach</h2></div><small>na podstawie zapisanej historii</small></header>
+      <div class="statistics-grid">
+        <article><span>Ostatnie 30 dni</span>${statisticChange(statistics.change30Days)}</article>
+        <article><span>Ostatnie 6 miesięcy</span>${statisticChange(statistics.change6Months)}</article>
+        <article><span>Ostatnie 12 miesięcy</span>${statisticChange(statistics.change12Months)}</article>
+        <article><span>Średnio miesięcznie</span>${statistics.averageMonthlyChange == null ? `<strong>—</strong><small>Za mało danych</small>` : `<strong class="${statistics.averageMonthlyChange >= 0 ? "positive" : "negative"}">${signed(statistics.averageMonthlyChange)}</strong><small>${statistics.growingMonths} z ${statistics.observedMonths} mies. na plusie</small>`}</article>
+        <article><span>Najlepszy miesiąc</span>${statistics.bestMonth ? `<strong class="positive">${signed(statistics.bestMonth.amount)}</strong><small>${monthLabel(statistics.bestMonth.month)}</small>` : `<strong>—</strong><small>Za mało danych</small>`}</article>
+        <article><span>Miesiące ze wzrostem</span><strong>${statistics.observedMonths ? `${statistics.growingMonths} / ${statistics.observedMonths}` : "—"}</strong><small>${statistics.observedMonths ? `${Math.round(statistics.growingMonths / statistics.observedMonths * 100)}% badanego okresu` : "Za mało danych"}</small></article>
+        <article><span>Zmiana zadłużenia · 12 mies.</span>${statistics.liabilityChange12Months ? `<strong class="${statistics.liabilityChange12Months.amount <= 0 ? "positive" : "negative"}">${signed(statistics.liabilityChange12Months.amount)}</strong><small>${statistics.liabilityChange12Months.amount <= 0 ? "zadłużenie spadło" : "zadłużenie wzrosło"}</small>` : `<strong>—</strong><small>Za mało danych</small>`}</article>
+        <article><span>Prognoza za 12 miesięcy</span>${statistics.projectedNetWorth12Months == null ? `<strong>—</strong><small>Za mało danych</small>` : `<strong>${money.format(statistics.projectedNetWorth12Months)}</strong><small>${statistics.isAtRecord ? "obecnie rekord wartości netto" : `rekord: ${money.format(statistics.recordNetWorth)}`}</small>`}</article>
+      </div>
     </section>
     <div class="main-grid">
       <section class="panel chart-panel">
@@ -237,7 +272,7 @@ function renderDashboard() {
       <div class="table-head"><span>Konto</span><span>Typ</span><span>Aktualizacja</span><span>Zmiana</span><span>Saldo</span><span></span></div>
       ${accounts.slice(0, 5).map(accountRow).join("")}
     </section>
-    ${goals.length ? `<section class="panel goals-preview"><header class="panel-head"><div><h2>Cele finansowe</h2><p>Postęp względem wartości netto</p></div><button class="text-button" data-view="goals">Zobacz cele ›</button></header>${goals.slice(0, 2).map(goalCard).join("")}</section>` : ""}`;
+    ${goals.length ? `<section class="panel goals-preview"><header class="panel-head"><div><h2>Cele finansowe</h2><p>Postęp względem wartości netto</p></div><button class="text-button" data-view="goals">Zobacz cele ›</button></header>${goals.slice(0, 2).map((goal) => goalCard(goal, true)).join("")}</section>` : ""}`;
   requestAnimationFrame(() => {
     const timeline = filterTimelineByRange(state.dashboard.timeline, state.chartRange);
     drawLineChart($("#netWorthChart"), timeline, "netWorth", "#2f6f5e");
@@ -260,20 +295,58 @@ function accountRow(account) {
   </div>`;
 }
 
-function goalCard(goal) {
+function compactGoalCard(goal) {
   return `<article class="goal-card ${goal.completed ? "completed" : ""}">
     <div class="goal-head"><span><strong>${esc(goal.name)}</strong><small>Start: ${dateLabel(goal.startDate)}${goal.targetDate ? ` · termin: ${dateLabel(goal.targetDate)}` : " · bez terminu"}</small></span><strong>${goal.progress}%</strong></div>
     <div class="goal-progress"><i style="width:${goal.progress}%"></i></div>
-    <div class="goal-foot"><span>start: ${money.format(goal.startAmount)} · teraz: ${money.format(goal.currentAmount)}</span><span>cel: ${money.format(goal.targetAmount)}</span></div>
+    <div class="goal-foot"><span>Do celu: <strong>${money.format(goal.remainingAmount)}</strong></span><span>cel: ${money.format(goal.targetAmount)}</span></div>
+    <div class="goal-actions"><button data-goal-complete="${goal.id}">${goal.completed ? "Przywróć" : "Oznacz jako osiągnięty"}</button><button class="danger-link" data-goal-delete="${goal.id}">Usuń</button></div>
+  </article>`;
+}
+
+function goalCard(goal, compact = false) {
+  if (compact) return compactGoalCard(goal);
+  const [statusLabel, statusTone] = goalStatus(goal);
+  const gainedTone = goal.gainedAmount >= 0 ? "positive" : "negative";
+  return `<article class="goal-card goal-card-detailed ${goal.completed ? "completed" : ""}">
+    <header class="goal-title-row">
+      <div><span class="goal-status ${statusTone}">${statusLabel}</span><h2>${esc(goal.name)}</h2><small>Start: ${dateLabel(goal.startDate)}${goal.targetDate ? ` · termin: ${dateLabel(goal.targetDate)}` : " · bez terminu"}</small></div>
+      <strong class="goal-percent">${goal.progress}%</strong>
+    </header>
+    <div class="goal-detail-grid">
+      <section class="goal-destination">
+        <span>Do celu zostało</span>
+        <strong>${money.format(goal.remainingAmount)}</strong>
+        <div class="goal-journey" aria-label="Postęp finansowy ${goal.progress}%">
+          <i style="width:${goal.progress}%"></i>
+          <b style="left:${Math.max(1, Math.min(99, goal.progress))}%"></b>
+          <em style="left:25%"></em><em style="left:50%"></em><em style="left:75%"></em>
+        </div>
+        <div class="goal-points"><span><small>Start</small>${money.format(goal.startAmount)}</span><span><small>Teraz</small>${money.format(goal.currentAmount)}</span><span><small>Cel</small>${money.format(goal.targetAmount)}</span></div>
+      </section>
+      <section class="goal-metrics">
+        <div><span>Od startu</span><strong class="${gainedTone}">${signed(goal.gainedAmount)}</strong></div>
+        <div><span>Średnie tempo</span><strong>${goal.monthlyPace == null ? "—" : `${signed(goal.monthlyPace)} / mies.`}</strong></div>
+        <div><span>Wymagane tempo</span><strong>${goal.requiredMonthlyChange == null ? "—" : `${money.format(goal.requiredMonthlyChange)} / mies.`}</strong></div>
+        <div><span>Prognozowane osiągnięcie</span><strong>${goal.estimatedCompletionDate ? dateLabel(goal.estimatedCompletionDate) : "—"}</strong></div>
+      </section>
+    </div>
+    ${goal.targetDate ? `<div class="goal-pace-bars"><div><span>Postęp finansowy <strong>${goal.progress}%</strong></span><i><b style="width:${goal.progress}%"></b></i></div><div><span>Upływ czasu <strong>${goal.timeProgress}%</strong></span><i class="time"><b style="width:${goal.timeProgress}%"></b></i></div></div>` : ""}
+    <section class="goal-chart-wrap"><header><strong>Rzeczywistość a plan</strong><span><i></i> wartość netto ${goal.targetDate ? "<i></i> plan" : ""}</span></header><canvas id="goalChart-${goal.id}"></canvas></section>
     <div class="goal-actions"><button data-goal-complete="${goal.id}">${goal.completed ? "Przywróć" : "Oznacz jako osiągnięty"}</button><button class="danger-link" data-goal-delete="${goal.id}">Usuń</button></div>
   </article>`;
 }
 
 function renderGoals() {
   const goals = state.dashboard.goals || [];
+  const active = goals.filter((goal) => !goal.completed);
+  const completed = goals.length - active.length;
+  const closest = active.length ? Math.max(...active.map((goal) => goal.progress)) : 0;
   main.innerHTML = `
     <div class="view-heading"><div><h1>Cele finansowe</h1><p>Konkretny kierunek dla rosnącej wartości netto.</p></div><button class="button primary" id="addGoal">＋ Nowy cel</button></div>
-    <section class="goals-grid">${goals.length ? goals.map(goalCard).join("") : `<div class="empty-state"><strong>Nie masz jeszcze celu</strong><p>Dodaj docelową wartość netto i obserwuj postęp.</p></div>`}</section>`;
+    ${goals.length ? `<section class="goals-summary"><div><span>Aktywne cele</span><strong>${active.length}</strong></div><div><span>Osiągnięte</span><strong>${completed}</strong></div><div><span>Najbliższy cel</span><strong>${closest}%</strong></div></section>` : ""}
+    <section class="goals-grid">${goals.length ? goals.map((goal) => goalCard(goal)).join("") : `<div class="empty-state"><strong>Nie masz jeszcze celu</strong><p>Dodaj docelową wartość netto i obserwuj postęp.</p></div>`}</section>`;
+  requestAnimationFrame(() => goals.forEach((goal) => drawGoalChart($(`#goalChart-${goal.id}`), goal)));
 }
 
 async function renderAccounts(query = "") {
@@ -639,6 +712,51 @@ function drawLineChart(canvas, items, key, color, valueFormatter = compactMoney,
     render(nearest);
   });
   canvas.addEventListener("pointerleave", () => render());
+}
+function drawGoalChart(canvas, goal) {
+  const setup = setupCanvas(canvas);
+  if (!setup) return;
+  const { context: ctx, width, height } = setup;
+  const actual = state.dashboard.timeline
+    .filter((item) => item.date >= goal.startDate)
+    .map((item) => ({ date: item.date, value: item.netWorth }));
+  if (!actual.length || actual[0].date !== goal.startDate) {
+    actual.unshift({ date: goal.startDate, value: goal.startAmount });
+  }
+  const startTime = dateValue(goal.startDate).getTime();
+  const latestTime = dateValue(actual.at(-1).date).getTime();
+  const targetTime = goal.targetDate ? dateValue(goal.targetDate).getTime() : latestTime;
+  const endTime = Math.max(startTime + 86400000, latestTime, targetTime);
+  const values = [...actual.map((item) => item.value), goal.startAmount, goal.targetAmount];
+  let min = Math.min(...values), max = Math.max(...values);
+  const spread = max - min || Math.abs(max) * .1 || 1;
+  min -= spread * .14; max += spread * .14;
+  const pad = { left: 8, right: 8, top: 13, bottom: 16 };
+  const x = (value) => pad.left + (width - pad.left - pad.right) * (value - startTime) / (endTime - startTime);
+  const y = (value) => pad.top + (height - pad.top - pad.bottom) * (1 - (value - min) / (max - min));
+
+  ctx.strokeStyle = "#ecece6"; ctx.lineWidth = 1;
+  for (let index = 0; index < 3; index++) {
+    const gridY = pad.top + (height - pad.top - pad.bottom) * index / 2;
+    ctx.beginPath(); ctx.moveTo(pad.left, gridY); ctx.lineTo(width - pad.right, gridY); ctx.stroke();
+  }
+  ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = "#d3a349"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(pad.left, y(goal.targetAmount)); ctx.lineTo(width - pad.right, y(goal.targetAmount)); ctx.stroke();
+  if (goal.targetDate) {
+    ctx.beginPath(); ctx.moveTo(x(startTime), y(goal.startAmount)); ctx.lineTo(x(targetTime), y(goal.targetAmount)); ctx.stroke();
+  }
+  ctx.restore();
+
+  const points = actual.map((item) => ({ x: x(dateValue(item.date).getTime()), y: y(item.value) }));
+  const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
+  gradient.addColorStop(0, "#2f6f5e30"); gradient.addColorStop(1, "#2f6f5e00");
+  ctx.beginPath(); ctx.moveTo(points[0].x, height - pad.bottom);
+  points.forEach((point) => ctx.lineTo(point.x, point.y));
+  ctx.lineTo(points.at(-1).x, height - pad.bottom); ctx.closePath(); ctx.fillStyle = gradient; ctx.fill();
+  ctx.beginPath(); points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+  ctx.strokeStyle = "#2f6f5e"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
+  const last = points.at(-1); ctx.beginPath(); ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = "white"; ctx.fill(); ctx.strokeStyle = "#2f6f5e"; ctx.lineWidth = 2.5; ctx.stroke();
 }
 function drawDonut(canvas, values, colors) {
   const setup = setupCanvas(canvas);
