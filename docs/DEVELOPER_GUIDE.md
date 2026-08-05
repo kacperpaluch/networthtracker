@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.5.0` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.5.1` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
