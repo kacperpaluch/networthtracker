@@ -126,7 +126,10 @@ waluty bazowej wpływa na prezentację i raporty, ale nie zmienia oryginalnych
 kwot. Aktywność pokazuje kurs oraz datę tabeli NBP użyte dla każdego snapshotu.
 Kursy potrzebne dla istniejącej historii są przygotowywane podczas zmiany
 waluty bazowej. Dashboard i raporty korzystają wyłącznie z lokalnego cache i
-nie wykonują blokujących zapytań do NBP podczas odczytu.
+nie wykonują blokujących zapytań do NBP podczas odczytu. Dla dat sprzed
+pierwszego znanego notowania (np. cel z bardzo starej kopii) przeliczenie
+korzysta z najstarszego dostępnego kursu, żeby brak jednego notowania nie
+blokował odczytu.
 
 Główne sumy na dashboardzie są zaokrąglane do pełnych jednostek waluty, żeby
 pozostały czytelne. Widoki kont i raportów pokazują część dziesiętną, gdy jest

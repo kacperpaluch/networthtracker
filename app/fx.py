@@ -56,6 +56,16 @@ def rate_to_pln(
     if not allow_network:
         if cached:
             return cached.rate_to_pln, cached.effective_date
+        oldest = (
+            db.query(ExchangeRate)
+            .filter(ExchangeRate.currency == code)
+            .order_by(ExchangeRate.effective_date)
+            .first()
+        )
+        if oldest:
+            # Dla dat sprzed pierwszego znanego kursu bierzemy najstarszy dostępny.
+            # Bez tego jeden stary wpis blokuje cały dashboard bez możliwości naprawy z UI.
+            return oldest.rate_to_pln, oldest.effective_date
         raise HTTPException(
             503,
             f"Brak lokalnego kursu {code} dla {lookup_day.isoformat()}. "

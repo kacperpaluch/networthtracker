@@ -9,7 +9,9 @@ if [ -f "/usr/share/zoneinfo/$timezone" ]; then
   printf '%s\n' "$timezone" > /etc/timezone
 fi
 
-printf '%s root /app/scripts/backup.sh >> /proc/1/fd/1 2>&1\n' "$schedule" \
+# Cron nie dziedziczy środowiska kontenera — retencję trzeba wpisać do crontaba.
+printf 'BACKUP_RETENTION_DAYS=%s\n%s root /app/scripts/backup.sh >> /proc/1/fd/1 2>&1\n' \
+  "${BACKUP_RETENTION_DAYS:-7}" "$schedule" \
   > /etc/cron.d/networthtracker-backup
 chmod 0644 /etc/cron.d/networthtracker-backup
 

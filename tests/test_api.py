@@ -13,6 +13,7 @@ from app.main import dashboard_statistics
 from app.main import env_flag
 from app.main import goal_progress
 from app.main import net_worth_at_pln
+from app.main import set_setting
 from app.main import percent_change
 from app.main import STATIC_VERSION
 from app.database import SessionLocal
@@ -999,3 +1000,60 @@ def test_important_snapshot_note_is_exposed_in_activity():
     assert response.status_code == 201
     recent = client.get("/api/dashboard").json()["recent"]
     assert any(item["note"] == "Premia roczna" and item["important"] for item in recent)
+
+
+def test_rate_before_first_known_fixing_falls_back_to_oldest():
+    """Data sprzed pierwszego kursu nie może wywalać dashboardu (503)."""
+    with SessionLocal() as db:
+        db.query(ExchangeRate).filter(ExchangeRate.currency == "SEK").delete()
+        db.add(
+            ExchangeRate(
+                currency="SEK",
+                effective_date=date(2026, 5, 4),
+                rate_to_pln=0.38,
+                table="A",
+            )
+        )
+        db.commit()
+
+        rate, rate_date = rate_to_pln(
+            "SEK", date(2024, 2, 23), db, allow_network=False
+        )
+        assert (rate, rate_date) == (0.38, date(2026, 5, 4))
+
+
+def test_imported_goal_with_old_start_date_keeps_dashboard_alive():
+    """Regresja: cel z kopii sprzed cache'owanych kursów blokował całą aplikację."""
+    with SessionLocal() as db:
+        db.query(ExchangeRate).filter(ExchangeRate.currency == "EUR").delete()
+        db.add(
+            ExchangeRate(
+                currency="EUR",
+                effective_date=date.today(),
+                rate_to_pln=4.3,
+                table="A",
+            )
+        )
+        set_setting(db, "base_currency", "EUR")
+        db.commit()
+    try:
+        assert client.post(
+            "/api/import/json?mode=merge",
+            json={
+                "accounts": [],
+                "snapshots": [],
+                "goals": [
+                    {
+                        "name": "Cel z bardzo starej kopii",
+                        "target_amount": 100000,
+                        "start_amount": 5000,
+                        "start_date": "2019-01-01",
+                    }
+                ],
+            },
+        ).status_code == 200
+        assert client.get("/api/dashboard").status_code == 200
+    finally:
+        with SessionLocal() as db:
+            set_setting(db, "base_currency", "PLN")
+            db.commit()

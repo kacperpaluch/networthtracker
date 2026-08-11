@@ -511,6 +511,8 @@ button { cursor: pointer; }
 .report-hero span { color: #b9cbc4; display: block; font-size: 10px; }
 .report-hero h2 { font-size: 35px; letter-spacing: -1.4px; margin: 8px 0; }
 .report-hero small { font-size: 10px; }
+.report-hero .positive { color: #8fe0c4 !important; }
+.report-hero .negative { color: #f2a596 !important; }
 .report-score { border-left: 1px solid #ffffff24; min-width: 180px; padding-left: 31px; }
 .report-score strong { display: block; font-size: 26px; margin: 7px 0; }
 .report-metrics { display: grid; gap: 16px; grid-template-columns: repeat(3,1fr); margin-top: 18px; }
