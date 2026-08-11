@@ -16,7 +16,7 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - pełna aktywność z filtrowaniem dat, kont i źródeł oraz stronicowaniem;
 - dashboard wartości netto, aktywów, zadłużenia i alokacji, z wykresem 6M/1R/MAX oraz dokładnymi wartościami po najechaniu;
 - statystyki zmian za 30 dni, 6 i 12 miesięcy, średniego tempa miesięcznego, najlepszego miesiąca, zadłużenia, rekordu oraz prognozy wartości netto;
-- raport miesięczny, raport roczny od pierwszego rzeczywistego miesiąca danych i porównania rok do roku;
+- raport miesięczny ze zmianą m/m procentową i kwotową, raport roczny od pierwszego rzeczywistego miesiąca danych i porównania rok do roku;
 - rozbudowane cele finansowe z kwotą pozostałą do celu, tempem rzeczywistym i wymaganym, statusem względem planu, prognozą terminu oraz wykresem rzeczywistość–plan;
 - konta w PLN, EUR, USD, GBP i CHF;
 - historyczne kursy średnie z NBP zapisywane przy snapshotach;

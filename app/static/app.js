@@ -524,7 +524,7 @@ async function renderMonthlyReport() {
           <button class="button secondary" id="printReport">⌑ Drukuj / PDF</button>
         </div>
       </div>
-      <section class="report-hero"><div><span>Wartość netto na koniec okresu</span><h2>${money.format(report.netWorth)}</h2><small class="${report.change >= 0 ? "positive" : "negative"}">${report.change >= 0 ? "↗" : "↘"} ${signed(report.change)} w tym miesiącu</small></div><div class="report-score"><span>Zmiana m/m</span><strong>${report.changePercent >= 0 ? "+" : ""}${report.changePercent}%</strong><small>${report.changePercent >= 0 ? "Pozytywny kierunek" : "Miesiąc ze spadkiem"}</small></div></section>
+      <section class="report-hero"><div><span>Wartość netto na koniec okresu</span><h2>${money.format(report.netWorth)}</h2><small class="${report.change >= 0 ? "positive" : "negative"}">${report.change >= 0 ? "↗" : "↘"} ${signed(report.change)} w tym miesiącu</small></div><div class="report-score"><span>Zmiana m/m</span><strong>${report.changePercent >= 0 ? "+" : ""}${report.changePercent}%</strong><small class="${report.change >= 0 ? "positive" : "negative"}">${signed(report.change)} m/m</small></div></section>
       <div class="report-metrics">
         ${metric("Aktywa", report.assets, report.assetChange, report.assetChange >= 0)}
         ${metric("Zobowiązania", report.liabilities, report.liabilityChange, report.liabilityChange <= 0)}
