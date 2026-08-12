@@ -6,8 +6,8 @@ bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 
 ## Funkcje
 
-- aktywa i zobowiązania z edycją waluty, archiwizacją i usuwaniem kont;
-- snapshoty z filtrowaną i stronicowaną historią, interaktywnymi wykresami kont oraz notatkami i kursem NBP;
+- aktywa i zobowiązania z archiwizacją i usuwaniem kont;
+- snapshoty z filtrowaną i stronicowaną historią, interaktywnymi wykresami kont oraz notatkami;
 - pełna aktywność z filtrowaniem dat, kont i źródeł oraz stronicowaniem;
 - dokładne kwoty w historii i czytelnie zaokrąglone podsumowanie dashboardu;
 - globalna zmiana wartości netto liczona między spójnymi punktami czasu;
@@ -15,7 +15,7 @@ bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 - raporty miesięczne i roczne ograniczone do rzeczywistego okresu danych oraz poprawne porównania wartości ujemnych;
 - cele finansowe z pozostałą kwotą, analizą tempa, statusem względem planu, prognozowanym terminem i wykresem rzeczywistość–plan;
 - aktywa vs zobowiązania i udziały procentowe;
-- PLN, EUR, USD, GBP i CHF z trwałym cache NBP; dashboard i raporty działają bez zapytań sieciowych;
+- wszystkie salda i raporty bezpośrednio w PLN;
 - eksport/import JSON i eksport CSV;
 - idempotentny endpoint `POST /api/sync` do integracji z Actual Budget i n8n;
 - cron backupujący SQLite do folderu hosta.

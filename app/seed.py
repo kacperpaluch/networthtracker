@@ -41,7 +41,6 @@ def seed_database(db: Session) -> None:
                     account_id=account.id,
                     snapshot_date=shift_month(today.replace(day=1), offset),
                     amount=round(amount, 2),
-                    rate_date=shift_month(today.replace(day=1), offset),
                     note="Dane demonstracyjne" if offset == -11 else "",
                     source="seed",
                 )

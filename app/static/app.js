@@ -95,13 +95,6 @@ function filterTimelineByRange(items, range) {
   const cutoff = subtractMonths(latest, months);
   return items.filter((item) => dateValue(item.date || item.snapshot_date) >= cutoff);
 }
-function exchangeRateDescription(status) {
-  if (!status?.currencies?.length) return "Nie dotyczy — wszystkie wartości są w PLN.";
-  const rates = status.currencies.map((item) =>
-    `${item.currency}: ${item.effectiveDate ? dateLabel(item.effectiveDate) : "brak kursu"}`
-  ).join(" · ");
-  return `Kurs jest pobierany z NBP przy zapisie snapshotu i pozostaje przypisany do jego daty. Ostatnie tabele w lokalnej bazie: ${rates}. Ręczne pobranie nie zmienia kursów historycznych snapshotów.`;
-}
 function esc(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -181,10 +174,7 @@ async function loadDashboard() {
     state.allAccounts = null;
     $("#errorBanner").hidden = true;
     $("#accountCount").textContent = state.dashboard.accounts.length;
-    const fx = state.dashboard.summary.exchangeRates;
-    $("#lastUpdated").textContent = fx?.currencies?.length
-      ? `Salda: ${dateLabel(state.dashboard.summary.updatedAt)} · tabela NBP w bazie: ${fx.effectiveDate ? dateLabel(fx.effectiveDate) : "brak danych"}`
-      : `Salda: ${dateLabel(state.dashboard.summary.updatedAt)} · kursy walut: nie dotyczy`;
+    $("#lastUpdated").textContent = `Salda: ${dateLabel(state.dashboard.summary.updatedAt)}`;
     if (!state.selectedMonth) {
       state.selectedMonth = state.dashboard.timeline.at(-1)?.date.slice(0, 7) || new Date().toISOString().slice(0, 7);
     }
@@ -285,7 +275,7 @@ function accountRow(account) {
   return `<div class="table-row">
     <button class="account-name" data-history="${account.id}">
       <span class="account-icon" style="color:${esc(account.color)};background:${esc(account.color)}18">${accountGlyph(account.category)}</span>
-      <span><strong>${esc(account.name)} ${account.stale ? `<i class="stale-badge">Nieaktualne ${account.staleDays} d.</i>` : ""}</strong><small>${esc(account.institution)}${account.currency !== state.baseCurrency ? ` · ${esc(account.currency)}` : ""}</small></span>
+      <span><strong>${esc(account.name)} ${account.stale ? `<i class="stale-badge">Nieaktualne ${account.staleDays} d.</i>` : ""}</strong><small>${esc(account.institution)}</small></span>
     </button>
     <span><i class="type-pill ${account.kind}">${account.kind === "asset" ? "Aktywo" : "Zobowiązanie"}</i></span>
     <span class="muted">${account.last_updated ? dateLabel(account.last_updated) : "—"}</span>
@@ -370,8 +360,8 @@ async function renderAccounts(query = "") {
     <section class="account-grid">${accounts.length ? accounts.map((account) => `
       <article class="account-card ${account.archived ? "archived-card" : ""}">
         <div class="account-card-top"><span class="account-icon" style="color:${esc(account.color)};background:${esc(account.color)}18">${accountGlyph(account.category)}</span><i class="type-pill ${account.kind}">${account.kind === "asset" ? "Aktywo" : "Zobowiązanie"}</i></div>
-        <span class="institution">${esc(account.institution)} · ${esc(account.currency)}</span><h3>${esc(account.name)} ${account.stale ? `<i class="stale-badge">Nieaktualne</i>` : ""}</h3>
-        <div class="account-card-balance"><strong>${money.format(account.current_balance)}</strong>${account.currency !== state.baseCurrency ? `<small class="native-balance">${nativeMoney(account.native_current_balance, account.currency)} w walucie konta</small>` : ""}</div>
+        <span class="institution">${esc(account.institution)}</span><h3>${esc(account.name)} ${account.stale ? `<i class="stale-badge">Nieaktualne</i>` : ""}</h3>
+        <div class="account-card-balance"><strong>${money.format(account.current_balance)}</strong></div>
         <footer class="account-card-foot"><span>${esc(account.category)}${account.stale ? ` · ${account.staleDays} dni po terminie` : ""}</span><div class="card-actions"><button data-history="${account.id}">⌁ Wykres</button><button data-edit-account="${account.id}">✎ ${account.archived ? "Przywróć" : "Edytuj"}</button>${account.archived ? "" : `<button data-update="${account.id}">Aktualizuj ›</button>`}</div></footer>
       </article>`).join("") : `<div class="empty-state"><strong>${state.showArchived ? "Archiwum jest puste" : "Brak pasujących kont"}</strong><p>${state.showArchived ? "Zarchiwizowane konta pojawią się tutaj." : "Zmień wyszukiwanie albo dodaj nowe konto."}</p></div>`}</section>`;
   const input = $("#accountSearch");
@@ -472,18 +462,12 @@ function renderActivityResults() {
     const change = item.change == null
       ? `<span class="activity-first">Pierwszy wpis</span>`
       : `<span class="activity-change ${favorable ? "positive" : "negative"}">${signedDetail(item.change)}</span><small>${detailMoney.format(item.previousAmount)} → ${detailMoney.format(item.amount)}</small>`;
-    const native = item.currency !== state.baseCurrency
-      ? `<small>${nativeMoney(item.nativeAmount, item.currency)} w walucie konta</small>`
-      : "";
-    const rate = item.currency !== "PLN" && item.rateDate
-      ? `<small class="fx-detail">1 ${esc(item.currency)} = ${Number(item.rateToPln).toFixed(4)} PLN · kurs z ${dateLabel(item.rateDate)}</small>`
-      : "";
     return `${day}<article class="activity-item ${item.important ? "important-change" : ""}">
       <span class="activity-icon ${item.kind}">${item.important ? "★" : "↻"}</span>
-      <div class="activity-copy"><button data-history="${item.accountId}">${esc(item.account)}</button><small>${esc(item.institution)} · ${esc(item.note || "Zapis salda")}</small>${rate}</div>
+      <div class="activity-copy"><button data-history="${item.accountId}">${esc(item.account)}</button><small>${esc(item.institution)} · ${esc(item.note || "Zapis salda")}</small></div>
       <span class="source-badge">${esc(activitySourceLabel(item.source))}</span>
       <div class="activity-delta">${change}</div>
-      <div class="activity-amount"><strong>${detailMoney.format(item.amount)}</strong>${native}</div>
+      <div class="activity-amount"><strong>${detailMoney.format(item.amount)}</strong></div>
     </article>`;
   }).join("");
   results.innerHTML = `<section class="panel activity-list">${rows}</section>
@@ -870,7 +854,7 @@ function renderAccountHistory() {
   const pageItems = filtered.slice(pageStart, pageStart + state.history.pageSize);
   $("#historyContent").innerHTML = `
       <div class="history-summary">
-        <div><span>Aktualne saldo</span><strong>${accountMoney(account.native_current_balance)}</strong>${account.currency !== state.baseCurrency ? `<small>${money.format(account.current_balance)} po przeliczeniu</small>` : ""}</div>
+        <div><span>Aktualne saldo</span><strong>${accountMoney(account.native_current_balance)}</strong></div>
         <div><span>Zmiana w wybranym okresie</span><strong class="${favorable ? "positive" : "negative"}">${accountSigned(change)}</strong><small>${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%</small></div>
         <button class="button primary" data-update="${account.id}">↻ Aktualizuj saldo</button>
       </div>
@@ -892,7 +876,7 @@ function renderAccountHistory() {
           const older = state.historySnapshots[snapshotIndex + 1];
           const delta = older ? snapshot.amount - older.amount : 0;
           const deltaFavorable = account.kind === "asset" ? delta >= 0 : delta <= 0;
-          return `<div class="history-row ${snapshot.important ? "important-change" : ""}"><span>${snapshot.important ? "★ " : ""}${dateLabel(snapshot.snapshot_date)}</span><span class="note">${esc(snapshot.note || (snapshot.source === "seed" ? "Dane demonstracyjne" : "Aktualizacja salda"))}${account.currency !== "PLN" ? `<small>Kurs NBP: ${snapshot.rate_to_pln.toFixed(4)} PLN · ${dateLabel(snapshot.rate_date)}</small>` : ""}</span><span class="${deltaFavorable ? "positive" : "negative"}">${older ? accountSigned(delta) : "—"}</span><strong>${accountMoney(snapshot.amount)}</strong><button class="snapshot-action" data-edit-snapshot="${snapshot.id}" aria-label="Edytuj snapshot z ${dateLabel(snapshot.snapshot_date)}">✎</button></div>`;
+          return `<div class="history-row ${snapshot.important ? "important-change" : ""}"><span>${snapshot.important ? "★ " : ""}${dateLabel(snapshot.snapshot_date)}</span><span class="note">${esc(snapshot.note || (snapshot.source === "seed" ? "Dane demonstracyjne" : "Aktualizacja salda"))}</span><span class="${deltaFavorable ? "positive" : "negative"}">${older ? accountSigned(delta) : "—"}</span><strong>${accountMoney(snapshot.amount)}</strong><button class="snapshot-action" data-edit-snapshot="${snapshot.id}" aria-label="Edytuj snapshot z ${dateLabel(snapshot.snapshot_date)}">✎</button></div>`;
         }).join("")}
       </div>
       <div class="history-pagination"><span>${filtered.length ? `${pageStart + 1}–${Math.min(pageStart + state.history.pageSize, filtered.length)} z ${filtered.length}` : "0 zapisów"}</span><div><button class="button secondary" data-history-page="prev" ${state.history.page <= 1 ? "disabled" : ""}>← Poprzednie</button><button class="button secondary" data-history-page="next" ${state.history.page >= totalPages ? "disabled" : ""}>Następne →</button></div></div>`;
@@ -910,7 +894,6 @@ function openEditAccount(accountId) {
   form.elements.account_id.value = account.id;
   form.elements.name.value = account.name;
   form.elements.institution.value = account.institution;
-  form.elements.currency.value = account.currency;
   form.elements.update_frequency.value = account.update_frequency;
   const categories = account.kind === "asset"
     ? ["Gotówka", "Oszczędności", "Inwestycje", "Nieruchomości", "Inne"]
@@ -946,9 +929,7 @@ async function openSettings() {
     $("#settingsAccounts").textContent = settings.accounts;
     $("#settingsSnapshots").textContent = settings.snapshots;
     $("#settingsVersion").textContent = settings.version;
-    $("#settingsForm").elements.base_currency.value = settings.baseCurrency;
     $("#settingsForm").elements.date_format.value = settings.dateFormat;
-    $("#exchangeRatesDescription").textContent = exchangeRateDescription(settings.exchangeRates);
   } catch {
     $("#settingsVersion").textContent = window.WORTHLY_VERSION || "—";
   }
@@ -1042,9 +1023,6 @@ $$(".modal-backdrop").forEach((backdrop) => backdrop.addEventListener("mousedown
 }));
 $$(".kind-toggle button").forEach((button) => button.addEventListener("click", () => setAccountKind(button.dataset.kind)));
 $("#updateAccount").addEventListener("change", syncUpdateAccount);
-$("#accountForm [name=currency]").addEventListener("change", (event) => {
-  $("#openingCurrency").textContent = event.target.value;
-});
 $("#retryButton").addEventListener("click", loadDashboard);
 $("#openMenu").addEventListener("click", () => $("#sidebar").classList.add("open"));
 $("#closeMenu").addEventListener("click", () => $("#sidebar").classList.remove("open"));
@@ -1138,7 +1116,6 @@ $("#accountForm").addEventListener("submit", async (event) => {
         institution: form.get("institution"),
         kind: form.get("kind"),
         category: form.get("category"),
-        currency: form.get("currency"),
         update_frequency: form.get("update_frequency"),
         opening_balance: Number(form.get("opening_balance")),
         color: form.get("kind") === "asset" ? "#2f6f5e" : "#a95342",
@@ -1181,7 +1158,6 @@ $("#editAccountForm").addEventListener("submit", async (event) => {
         name: form.get("name"),
         institution: form.get("institution"),
         category: form.get("category"),
-        currency: form.get("currency"),
         update_frequency: form.get("update_frequency"),
       }),
     });
@@ -1223,22 +1199,6 @@ $("#archiveAccountButton").addEventListener("click", async () => {
     showToast(error.message);
   } finally { button.disabled = false; }
 });
-$("#refreshExchangeRates").addEventListener("click", async () => {
-  const button = $("#refreshExchangeRates");
-  button.disabled = true;
-  button.textContent = "Odświeżanie…";
-  try {
-    const status = await api("/exchange-rates/refresh", { method: "POST" });
-    $("#exchangeRatesDescription").textContent = exchangeRateDescription(status);
-    await loadDashboard();
-    showToast(status.currencies.length ? "Kursy NBP zostały odświeżone." : "Brak walut wymagających kursu NBP.");
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Pobierz najnowsze";
-  }
-});
 $("#snapshotForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -1270,7 +1230,6 @@ $("#settingsForm").addEventListener("submit", async (event) => {
     await api("/settings", {
       method: "PATCH",
       body: JSON.stringify({
-        base_currency: form.get("base_currency"),
         date_format: form.get("date_format"),
       }),
     });

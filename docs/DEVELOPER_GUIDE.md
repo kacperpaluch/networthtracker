@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.5.1` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.6.0` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
@@ -11,8 +11,7 @@ rozbudowie.
 - dane są przechowywane w SQLite;
 - historia składa się ze snapshotów sald, nie z transakcji;
 - zobowiązania są dodatnimi kwotami odejmowanymi od aktywów;
-- konta mogą mieć różne waluty;
-- historyczne kursy pochodzą z NBP i są zapisywane lokalnie;
+- wszystkie kwoty są przechowywane w PLN;
 - systemowy cron w tym samym kontenerze wykonuje kopie bazy.
 
 ## Architektura
@@ -24,8 +23,7 @@ Przeglądarka
 FastAPI + Jinja2
     ├── REST API
     ├── raporty i eksport
-    ├── statyczny interfejs
-    └── klient NBP Web API
+    └── statyczny interfejs
     │
     ▼
 SQLAlchemy ──> SQLite /data/networth.db
@@ -49,7 +47,6 @@ networthtracker/
 │   ├── templates/
 │   │   └── index.html      # szkielet strony i modale
 │   ├── database.py         # silnik SQLAlchemy i sesje
-│   ├── fx.py               # NBP, cache kursów i przeliczenia
 │   ├── main.py             # aplikacja FastAPI i endpointy
 │   ├── models.py           # modele tabel
 │   ├── schemas.py          # kontrakty Pydantic
@@ -79,7 +76,6 @@ frontendu ani drugiej aplikacji. Katalog `backend/` tworzyłby zbędny poziom.
 - FastAPI i Uvicorn;
 - SQLAlchemy 2 i Pydantic 2;
 - Jinja2 i SQLite;
-- HTTPX do NBP;
 - pytest i FastAPI TestClient;
 - HTML, CSS, vanilla JavaScript i Canvas.
 
@@ -104,8 +100,8 @@ frontendu ani drugiej aplikacji. Katalog `backend/` tworzyłby zbędny poziom.
 | `institution` | bank, broker lub opis |
 | `kind` | `asset` albo `liability` |
 | `category` | kategoria raportowa |
-| `currency` | kod waluty konta |
 | `archived` | ukrycie bez usuwania historii |
+| `archived_at` | data wyłączenia konta z bieżącej wartości netto |
 | `update_frequency` | `weekly`, `monthly`, `quarterly` lub `yearly` |
 | `next_update` | termin kolejnego przypomnienia |
 
@@ -115,21 +111,17 @@ frontendu ani drugiej aplikacji. Katalog `backend/` tworzyłby zbędny poziom.
 | --- | --- |
 | `account_id` | konto |
 | `snapshot_date` | dzień salda |
-| `amount` | kwota w walucie konta |
+| `amount` | kwota PLN |
 | `note` | komentarz użytkownika |
 | `important` | wyróżnienie istotnej zmiany |
-| `rate_to_pln` | zapisany kurs jednostki waluty konta do PLN |
-| `rate_date` | data notowania |
 | `source` | `manual`, `actual-budget`, `seed` albo `import` |
 
-`AppSetting` przechowuje walutę bazową i format dat. `Goal` przechowuje docelową
+`AppSetting` przechowuje format dat. `Goal` przechowuje docelową
 wartość netto, wybraną `start_date` oraz wyliczone dla niej `start_amount`.
-Kwoty celu są normalizowane bezpośrednio do PLN. Postęp jest liczony na
-wartościach PLN, a prezentacja używa kursu właściwego dla daty startu. Migracja
+Kwoty celu i postęp są liczone bezpośrednio w PLN. Migracja
 SQLite uzupełnia `start_date`
 istniejących celów datą ich utworzenia. Dzięki temu postęp działa również
-między wartościami ujemnymi. `ExchangeRate` jest lokalnym cache NBP z unikalną
-parą waluta–data.
+między wartościami ujemnymi.
 
 Odpowiedź celu zawiera również `remainingAmount`, `gainedAmount`,
 `timeProgress`, `paceStatus`, `monthlyPace`, `requiredMonthlyChange` i
@@ -174,30 +166,13 @@ wpływ zobowiązania = -(saldo bieżące - saldo poprzednie)
 
 Spłata zobowiązania ma dodatni wpływ na wartość netto.
 
-## Waluty i NBP
+## Waluta
 
-`fx.py` odpytuje przez HTTPS:
-
-```text
-https://api.nbp.pl/api/exchangerates/rates/{table}/{code}/{start}/{end}/
-```
-
-Najpierw używana jest tabela A, potem B. Dla weekendów i świąt wybierane jest
-ostatnie notowanie z poprzednich 10 dni. PLN ma kurs `1`.
-
-```text
-wartość PLN = amount × rate_to_pln
-wartość bazowa = wartość PLN / kurs waluty bazowej do PLN
-```
-
-Kurs jest zapisany przy snapshocie, dlatego późniejsze tabele NBP nie zmieniają
-historycznego wyniku.
-
-Operacje zapisujące dane pobierają i utrwalają brakujące kursy. Zmiana waluty
-bazowej przygotowuje cache dla wszystkich dat istniejących snapshotów. Endpointy
-`GET`, w tym dashboard i raporty, nie wykonują zapytań HTTP do NBP — korzystają
-wyłącznie z lokalnych tabel. Brak kursu zwraca kontrolowane `503` z instrukcją
-odświeżenia zamiast wielokrotnie blokować request.
+Backend przyjmuje, przechowuje i zwraca wyłącznie kwoty PLN. Nie wykonuje
+zapytań sieciowych o kursy. Migracja wersji 1.6 mnoży kwoty starych kont
+walutowych przez kurs zapisany przy snapshocie, ustawia konta na PLN i usuwa
+nieużywany cache kursów. Import starych kopii JSON i CSV wykonuje tę samą
+konwersję podczas odczytu.
 
 Daty snapshotów, synchronizacji i importu nie mogą wykraczać poza bieżący
 dzień. Walidacja obejmuje tworzenie, edycję, `POST /api/sync` oraz import JSON i
@@ -211,7 +186,7 @@ CSV.
 | `GET` | `/api/dashboard` | agregaty i dane widoków |
 | `GET` | `/api/activity` | filtrowana i stronicowana historia snapshotów |
 | `GET/POST` | `/api/accounts` | lista i nowe konto |
-| `PATCH` | `/api/accounts/{id}` | edycja, zmiana lub konwersja waluty, archiwizacja |
+| `PATCH` | `/api/accounts/{id}` | edycja i archiwizacja |
 | `DELETE` | `/api/accounts/{id}` | trwałe usunięcie konta i snapshotów |
 | `GET/POST` | `/api/accounts/{id}/snapshots` | historia i nowy snapshot |
 | `PATCH/DELETE` | `/api/snapshots/{id}` | korekta lub usunięcie |
@@ -219,7 +194,6 @@ CSV.
 | `GET` | `/api/reports/monthly?month=RRRR-MM` | raport miesięczny |
 | `GET` | `/api/reports/annual?year=RRRR` | raport roczny |
 | `GET/PATCH` | `/api/settings` | preferencje |
-| `POST` | `/api/exchange-rates/refresh` | pobranie najnowszych tabel NBP |
 | `GET/POST` | `/api/goals` | lista i nowy cel |
 | `PATCH/DELETE` | `/api/goals/{id}` | zmiana lub usunięcie celu |
 | `GET` | `/api/export/json` | pełna kopia logiczna |
@@ -233,7 +207,7 @@ Pełny kontrakt jest dostępny w Swagger UI pod `/docs`.
 
 `GET /api/activity` przyjmuje opcjonalne parametry `date_from`, `date_to`,
 `account_id`, `source`, `page` i `page_size` (maksymalnie 100). Wynik zawiera
-pełne dane snapshotu, saldo poprzednie i zmianę w walucie bazowej oraz pola
+pełne dane snapshotu, saldo poprzednie i zmianę w PLN oraz pola
 `total` i `hasMore`. Poprzedni wpis jest wyszukiwany w całej historii konta,
 nie tylko wewnątrz wybranego zakresu dat, dzięki czemu zmiana na pierwszym
 widocznym wierszu pozostaje prawidłowa.
@@ -248,18 +222,15 @@ do dwóch miejsc po przecinku.
 
 `POST /api/sync` zachowuje kompatybilność z integracjami n8n używanymi przez
 poprzednią wersję aplikacji. Body jest tablicą obiektów z polami `date`
-(`RRRR-MM-DD`), `account_name`, nieujemnym `value` oraz opcjonalnym
-trzyliterowym `currency`. `value` zawsze oznacza kwotę natywną konta. Gdy
-`currency` jest przekazane, musi odpowiadać walucie konta; jego brak oznacza
-walutę konta dla kompatybilności ze starszymi klientami.
+(`RRRR-MM-DD`), `account_name`, nieujemnym i skończonym `value` PLN oraz
+opcjonalnym `currency`, które może mieć wyłącznie wartość `PLN`.
 
 Endpoint buduje indeks aktywnych kont z użyciem `casefold()`. Brak dopasowania
 lub kilka aktywnych kont o tej samej nazwie zwraca błąd danego elementu bez
 przerywania całej paczki. Istniejący snapshot dla konta i daty jest wybierany
 od najnowszego ID. Zmieniona wartość jest aktualizowana, identyczna klasyfikowana
 jako `unchanged`, a brakujący snapshot tworzony ze źródłem `actual-budget`.
-Nowy wpis walutowy zapisuje historyczny kurs NBP zgodnie ze zwykłym mechanizmem
-snapshotów. Po paczce przeliczane jest `next_update` każdego dotkniętego konta.
+Po paczce przeliczane jest `next_update` każdego dotkniętego konta.
 
 Datą rozpoczęcia synchronizacji konta jest najstarsza data jego snapshotu;
 przy remisie rozstrzyga najniższe ID. Wpisy wcześniejsze nie są błędami:
@@ -271,23 +242,16 @@ snapshotu zachowuje jego pierwotne pole `source`.
 Odpowiedź zawiera liczniki `created`, `updated`, `unchanged`, `skipped`, listę
 `synced` z akcją każdego zapisanego elementu, listę `ignored` i listę `errors`.
 
-Dla budżetu Actual prowadzonego w PLN zalecamy ustawić walutę wszystkich
-synchronizowanych kont Worthly na `PLN`, także kont pomocniczych nazwanych `USD`
-i `EUR`. Workflow wyceny najpierw doprowadza ich salda Actual do aktualnej
-wartości PLN, a workflow Trackera uruchomiony później przesyła je z polem
-`"currency": "PLN"`. Dzięki temu Worthly nie powiela logiki wyceny.
-
-Migracja istniejącego konta walutowego używa `PATCH /api/accounts/{id}` z
-`{"currency":"PLN","convert_amounts":true}`. Flaga zachowuje wartość PLN
-każdego historycznego snapshotu na podstawie zapisanego kursu. Domyślne
-`convert_amounts:false` zachowuje dotychczasową semantykę korekty błędnie
-oznaczonej waluty, czyli nie zmienia liczby jednostek.
+Workflow wyceny najpierw doprowadza salda Actual do aktualnej wartości PLN, a
+workflow Trackera uruchomiony później przesyła je z polem `"currency": "PLN"`
+lub bez pola waluty.
 
 ## Migracje
 
 `Base.metadata.create_all()` tworzy nowe tabele. Funkcja
-`migrate_sqlite_schema()` dodaje brakujące kolumny w starszej bazie i jest
-idempotentna. Przy kolejnych rozbudowanych zmianach należy wdrożyć Alembic.
+`migrate_sqlite_schema()` dodaje brakujące kolumny, zachowuje historyczne
+wartości podczas migracji do PLN i jest idempotentna. Przy kolejnych
+rozbudowanych zmianach należy wdrożyć Alembic.
 
 ## Backup
 
@@ -307,9 +271,9 @@ pip install -r requirements-dev.txt
 PYTHONPATH=. pytest -q
 ```
 
-Testy obejmują dashboard, raporty bez dostępu do sieci, konta, snapshoty,
-archiwizację, ustawienia, cele, waluty, cache kursów bez duplikatów, walidację
-dat przyszłych, synchronizację, import i eksport.
+Testy obejmują dashboard, raporty, konta, snapshoty, historyczną archiwizację,
+ustawienia, cele, walidację liczb i dat przyszłych, synchronizację, migrację
+starych danych walutowych, import i eksport.
 
 Uruchomienie bez Dockera:
 

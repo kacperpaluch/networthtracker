@@ -11,15 +11,15 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import and_, inspect, or_, text
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine, get_db
-from .fx import convert_from_pln, rate_to_pln
-from .models import Account, AppSetting, ExchangeRate, Goal, Snapshot
+from .models import Account, AppSetting, Goal, Snapshot
 from .schemas import (
     AccountCreate,
     AccountOut,
@@ -51,26 +51,40 @@ def migrate_sqlite_schema() -> None:
     if engine.dialect.name != "sqlite":
         return
     columns = {item["name"] for item in inspect(engine).get_columns("snapshots")}
+    account_columns = {
+        item["name"] for item in inspect(engine).get_columns("accounts")
+    }
     statements = []
     if "important" not in columns:
         statements.append(
             "ALTER TABLE snapshots ADD COLUMN important BOOLEAN NOT NULL DEFAULT 0"
         )
-    if "rate_to_pln" not in columns:
-        statements.append(
-            "ALTER TABLE snapshots ADD COLUMN rate_to_pln FLOAT NOT NULL DEFAULT 1.0"
-        )
-    if "rate_date" not in columns:
-        statements.append("ALTER TABLE snapshots ADD COLUMN rate_date DATE")
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
-        connection.execute(
-            text(
-                "UPDATE snapshots SET rate_to_pln = 1.0 "
-                "WHERE rate_to_pln IS NULL OR rate_to_pln <= 0"
+        if "archived_at" not in account_columns:
+            connection.execute(
+                text("ALTER TABLE accounts ADD COLUMN archived_at DATE")
             )
-        )
+            connection.execute(
+                text(
+                    "UPDATE accounts SET archived_at = CURRENT_DATE "
+                    "WHERE archived = 1"
+                )
+            )
+        # Worthly od tej wersji przechowuje wyłącznie kwoty PLN. Starsze konta
+        # walutowe są konwertowane dokładnie raz, według kursu zapisanego przy
+        # każdym snapshocie.
+        if "rate_to_pln" in columns:
+            connection.execute(
+                text(
+                    "UPDATE snapshots "
+                    "SET amount = amount * COALESCE(rate_to_pln, 1.0) "
+                    "WHERE account_id IN "
+                    "(SELECT id FROM accounts WHERE currency != 'PLN')"
+                )
+            )
+        connection.execute(text("UPDATE accounts SET currency = 'PLN'"))
         goal_columns = {
             item["name"] for item in inspect(engine).get_columns("goals")
         }
@@ -86,10 +100,11 @@ def migrate_sqlite_schema() -> None:
             connection.execute(
                 text("UPDATE goals SET start_date = DATE(created_at)")
             )
+        connection.execute(text("DROP TABLE IF EXISTS exchange_rates"))
         connection.execute(
             text(
-                "UPDATE snapshots SET rate_date = snapshot_date "
-                "WHERE rate_date IS NULL"
+                "DELETE FROM app_settings "
+                "WHERE key = 'base_currency' OR key LIKE 'fx_%'"
             )
         )
 
@@ -108,9 +123,23 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.5.1")
+app = FastAPI(title="Worthly", version="1.6.0")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    _request: Request, error: RequestValidationError
+):
+    """Return a valid 422 even when the rejected JSON contained Infinity."""
+    details = []
+    for item in error.errors():
+        safe_item = dict(item)
+        safe_item.pop("input", None)
+        safe_item.pop("ctx", None)
+        details.append(safe_item)
+    return JSONResponse(status_code=422, content={"detail": details})
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -136,45 +165,14 @@ def set_setting(db: Session, key: str, value: str) -> None:
         db.flush()
 
 
-def snapshot_value(snapshot: Snapshot, base_currency: str, db: Session) -> float:
-    amount_pln = snapshot.amount * (snapshot.rate_to_pln or 1.0)
-    return convert_from_pln(
-        amount_pln, base_currency, snapshot.snapshot_date, db
-    )
+def snapshot_value(snapshot: Snapshot) -> float:
+    return snapshot.amount
 
 
-def prepare_snapshot_rate(
-    snapshot: Snapshot, account: Account, db: Session
-) -> None:
-    rate, rate_date = rate_to_pln(account.currency, snapshot.snapshot_date, db)
-    snapshot.rate_to_pln = rate
-    snapshot.rate_date = rate_date
-    base_currency = get_setting(db, "base_currency", "PLN")
-    if base_currency != "PLN" and base_currency != account.currency:
-        rate_to_pln(base_currency, snapshot.snapshot_date, db)
-
-
-def prepare_base_rates(
-    base_currency: str, days: set[date], db: Session
-) -> None:
-    if base_currency == "PLN":
-        return
-    for day in sorted(days | {date.today()}):
-        rate_to_pln(base_currency, day, db)
-
-
-def goal_response(
-    goal: Goal, current_net_pln: float, base_currency: str, db: Session
-) -> dict:
-    target = convert_from_pln(
-        goal.target_amount, base_currency, date.today(), db
-    )
-    start = convert_from_pln(
-        goal.start_amount, base_currency, goal.start_date, db
-    )
-    current_for_goal = convert_from_pln(
-        current_net_pln, base_currency, date.today(), db
-    )
+def goal_response(goal: Goal, current_net_pln: float) -> dict:
+    target = goal.target_amount
+    start = goal.start_amount
+    current_for_goal = current_net_pln
     progress = goal_progress(
         goal.start_amount, current_net_pln, goal.target_amount
     )
@@ -183,12 +181,8 @@ def goal_response(
         0.0, (goal.target_amount - current_net_pln) * direction
     )
     gained_pln = (current_net_pln - goal.start_amount) * direction
-    remaining = convert_from_pln(
-        remaining_pln, base_currency, date.today(), db
-    )
-    gained = convert_from_pln(
-        gained_pln, base_currency, date.today(), db
-    )
+    remaining = remaining_pln
+    gained = gained_pln
 
     elapsed_days = max(0, (date.today() - goal.start_date).days)
     monthly_pace = (
@@ -351,10 +345,16 @@ def dashboard_statistics(timeline: list[dict]) -> dict:
     }
 
 
+def account_active_at(account: Account, cutoff: date) -> bool:
+    return account.archived_at is None or account.archived_at > cutoff
+
+
 def net_worth_at_pln(cutoff: date, db: Session) -> float:
     value = 0.0
-    accounts = db.query(Account).filter(Account.archived.is_(False)).all()
+    accounts = db.query(Account).all()
     for account in accounts:
+        if not account_active_at(account, cutoff):
+            continue
         snapshot = (
             db.query(Snapshot)
             .filter(
@@ -366,21 +366,17 @@ def net_worth_at_pln(cutoff: date, db: Session) -> float:
         )
         if not snapshot:
             continue
-        amount_pln = snapshot.amount * (snapshot.rate_to_pln or 1.0)
-        value += amount_pln if account.kind == "asset" else -amount_pln
+        value += snapshot.amount if account.kind == "asset" else -snapshot.amount
     return value
 
 
-def account_response(
-    account: Account, db: Session, base_currency: str | None = None
-) -> AccountOut:
-    base_currency = base_currency or get_setting(db, "base_currency", "PLN")
+def account_response(account: Account, db: Session) -> AccountOut:
     ordered = sorted(account.snapshots, key=lambda item: (item.snapshot_date, item.id), reverse=True)
     native_current = ordered[0].amount if ordered else 0
     native_previous = ordered[1].amount if len(ordered) > 1 else native_current
-    current = snapshot_value(ordered[0], base_currency, db) if ordered else 0
+    current = snapshot_value(ordered[0]) if ordered else 0
     previous = (
-        snapshot_value(ordered[1], base_currency, db)
+        snapshot_value(ordered[1])
         if len(ordered) > 1
         else current
     )
@@ -393,41 +389,6 @@ def account_response(
         last_updated=ordered[0].snapshot_date if ordered else None,
         change=current - previous,
     )
-
-
-def exchange_rate_status(db: Session, accounts: list[Account] | None = None) -> dict:
-    """Describe the NBP rates currently available to the application."""
-    accounts = accounts if accounts is not None else db.query(Account).all()
-    base_currency = get_setting(db, "base_currency", "PLN")
-    currencies = {account.currency for account in accounts if account.currency != "PLN"}
-    if base_currency != "PLN":
-        currencies.add(base_currency)
-
-    items = []
-    for currency in sorted(currencies):
-        latest = (
-            db.query(ExchangeRate)
-            .filter(ExchangeRate.currency == currency)
-            .order_by(ExchangeRate.effective_date.desc())
-            .first()
-        )
-        checked = db.get(AppSetting, f"fx_last_checked_{currency}")
-        items.append(
-            {
-                "currency": currency,
-                "effectiveDate": latest.effective_date.isoformat() if latest else None,
-                "checkedAt": checked.value if checked else None,
-            }
-        )
-
-    dated = [item["effectiveDate"] for item in items if item["effectiveDate"]]
-    return {
-        "provider": "NBP",
-        "mode": "on_demand",
-        "currencies": items,
-        "effectiveDate": min(dated) if dated else None,
-    }
-
 
 @app.get("/api/health")
 def health():
@@ -445,12 +406,11 @@ def list_accounts(include_archived: bool = False, db: Session = Depends(get_db))
 @app.post("/api/accounts", response_model=AccountOut, status_code=201)
 def create_account(payload: AccountCreate, db: Session = Depends(get_db)):
     values = payload.model_dump(exclude={"opening_balance"})
-    values["currency"] = values["currency"].upper()
+    values["currency"] = "PLN"
     account = Account(**values)
     db.add(account)
     db.flush()
     snapshot = Snapshot(account_id=account.id, snapshot_date=date.today(), amount=payload.opening_balance, note="Saldo początkowe")
-    prepare_snapshot_rate(snapshot, account, db)
     db.add(snapshot)
     db.flush()
     recalculate_next_update(account, db)
@@ -464,22 +424,11 @@ def update_account(account_id: int, payload: AccountUpdate, db: Session = Depend
     account = db.get(Account, account_id)
     if not account:
         raise HTTPException(404, "Nie znaleziono konta")
-    previous_currency = account.currency
     changes = payload.model_dump(exclude_unset=True)
-    convert_amounts = changes.pop("convert_amounts", False)
-    amounts_pln = {
-        snapshot.id: snapshot.amount * (snapshot.rate_to_pln or 1.0)
-        for snapshot in account.snapshots
-    }
     for key, value in changes.items():
-        if key == "currency" and value:
-            value = value.upper()
         setattr(account, key, value)
-    if "currency" in payload.model_fields_set:
-        for snapshot in account.snapshots:
-            prepare_snapshot_rate(snapshot, account, db)
-            if convert_amounts and account.currency != previous_currency:
-                snapshot.amount = amounts_pln[snapshot.id] / snapshot.rate_to_pln
+    if "archived" in payload.model_fields_set:
+        account.archived_at = date.today() if account.archived else None
     if "update_frequency" in payload.model_fields_set:
         recalculate_next_update(account, db)
     db.commit()
@@ -514,7 +463,6 @@ def add_snapshot(account_id: int, payload: SnapshotCreate, db: Session = Depends
     if not account:
         raise HTTPException(404, "Nie znaleziono konta")
     snapshot = Snapshot(account_id=account_id, **payload.model_dump())
-    prepare_snapshot_rate(snapshot, account, db)
     db.add(snapshot)
     db.flush()
     recalculate_next_update(account, db)
@@ -593,18 +541,7 @@ def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
             continue
 
         account = matches[0]
-        input_currency = (item.currency or account.currency).upper()
-        if input_currency != account.currency:
-            errors.append(
-                {
-                    **result_key,
-                    "error": (
-                        f"Waluta wejściowa {input_currency} nie zgadza się "
-                        f"z walutą konta {account.currency}"
-                    ),
-                }
-            )
-            continue
+        input_currency = "PLN"
 
         tracking_start = tracking_starts.get(account.id)
         if tracking_start and item.date < tracking_start:
@@ -636,7 +573,6 @@ def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
                 note="Synchronizacja z Actual Budget",
                 source="actual-budget",
             )
-            prepare_snapshot_rate(snapshot, account, db)
             db.add(snapshot)
             created += 1
             action = "created"
@@ -668,9 +604,7 @@ def sync_entries(payload: list[SyncEntry], db: Session = Depends(get_db)):
     }
 
 
-def balance_at(
-    account_id: int, cutoff: date, base_currency: str, db: Session
-) -> float:
+def balance_at(account_id: int, cutoff: date, db: Session) -> float:
     snapshot = (
         db.query(Snapshot)
         .filter(
@@ -680,7 +614,7 @@ def balance_at(
         .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
         .first()
     )
-    return snapshot_value(snapshot, base_currency, db) if snapshot else 0.0
+    return snapshot_value(snapshot) if snapshot else 0.0
 
 
 @app.patch("/api/snapshots/{snapshot_id}", response_model=SnapshotOut)
@@ -692,8 +626,6 @@ def update_snapshot(
         raise HTTPException(404, "Nie znaleziono snapshotu")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(snapshot, key, value)
-    if "snapshot_date" in payload.model_fields_set:
-        prepare_snapshot_rate(snapshot, snapshot.account, db)
     db.flush()
     recalculate_next_update(snapshot.account, db)
     db.commit()
@@ -715,22 +647,16 @@ def delete_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/dashboard")
 def dashboard(db: Session = Depends(get_db)):
-    base_currency = get_setting(db, "base_currency", "PLN")
     date_format = get_setting(db, "date_format", "DD.MM.YYYY")
-    accounts = db.query(Account).filter(Account.archived.is_(False)).all()
-    snapshots = (
-        db.query(Snapshot)
-        .join(Account)
-        .filter(Account.archived.is_(False))
-        .order_by(Snapshot.snapshot_date, Snapshot.id)
-        .all()
-    )
+    all_accounts = db.query(Account).all()
+    accounts = [account for account in all_accounts if not account.archived]
+    snapshots = db.query(Snapshot).order_by(Snapshot.snapshot_date, Snapshot.id).all()
 
     current_assets = current_liabilities = 0.0
     category_values: dict[str, float] = defaultdict(float)
     account_items = []
     for account in accounts:
-        output = account_response(account, db, base_currency)
+        output = account_response(account, db)
         item = output.model_dump(mode="json")
         item["stale"] = bool(
             account.next_update and account.next_update < date.today()
@@ -747,24 +673,37 @@ def dashboard(db: Session = Depends(get_db)):
         else:
             current_liabilities += output.current_balance
 
-    accounts_by_id = {account.id: account for account in accounts}
+    accounts_by_id = {account.id: account for account in all_accounts}
     snapshots_by_date: dict[date, list[Snapshot]] = defaultdict(list)
     for snapshot in snapshots:
-        snapshots_by_date[snapshot.snapshot_date].append(snapshot)
+        account = accounts_by_id[snapshot.account_id]
+        if account.archived_at is None or snapshot.snapshot_date < account.archived_at:
+            snapshots_by_date[snapshot.snapshot_date].append(snapshot)
+    archived_by_date: dict[date, list[Account]] = defaultdict(list)
+    for account in all_accounts:
+        if account.archived_at is not None:
+            archived_by_date[account.archived_at].append(account)
 
     running_assets = running_liabilities = 0.0
     running_values: dict[int, float] = {}
     timeline = []
-    for point_date, dated_snapshots in sorted(snapshots_by_date.items()):
-        for snapshot in dated_snapshots:
+    event_dates = sorted(set(snapshots_by_date) | set(archived_by_date))
+    for point_date in event_dates:
+        for snapshot in snapshots_by_date[point_date]:
             account = accounts_by_id[snapshot.account_id]
             previous_value = running_values.get(account.id, 0.0)
-            value = snapshot_value(snapshot, base_currency, db)
+            value = snapshot_value(snapshot)
             running_values[account.id] = value
             if account.kind == "asset":
                 running_assets += value - previous_value
             else:
                 running_liabilities += value - previous_value
+        for account in archived_by_date[point_date]:
+            previous_value = running_values.pop(account.id, 0.0)
+            if account.kind == "asset":
+                running_assets -= previous_value
+            else:
+                running_liabilities -= previous_value
         timeline.append(
             {
                 "date": point_date.isoformat(),
@@ -782,7 +721,12 @@ def dashboard(db: Session = Depends(get_db)):
         {"name": name, "value": round(value, 2), "color": next((account.color for account in accounts if account.category == name), "#2f6f5e")}
         for name, value in sorted(category_values.items(), key=lambda item: item[1], reverse=True)
     ]
-    recent = sorted(snapshots, key=lambda item: (item.created_at, item.id), reverse=True)[:5]
+    active_ids = {account.id for account in accounts}
+    recent = sorted(
+        (item for item in snapshots if item.account_id in active_ids),
+        key=lambda item: (item.created_at, item.id),
+        reverse=True,
+    )[:5]
     goals = db.query(Goal).order_by(Goal.completed, Goal.created_at).all()
 
     return {
@@ -794,9 +738,8 @@ def dashboard(db: Session = Depends(get_db)):
             "changePercent": percent_change(current_net - previous_net, previous_net),
             "overdue": overdue,
             "updatedAt": max((item.snapshot_date for item in snapshots), default=date.today()).isoformat(),
-            "baseCurrency": base_currency,
+            "baseCurrency": "PLN",
             "dateFormat": date_format,
-            "exchangeRates": exchange_rate_status(db, accounts),
         },
         "timeline": timeline,
         "statistics": dashboard_statistics(timeline),
@@ -807,20 +750,18 @@ def dashboard(db: Session = Depends(get_db)):
                 "id": item.id,
                 "account": item.account.name,
                 "kind": item.account.kind,
-                "amount": round(snapshot_value(item, base_currency, db), 2),
+                "amount": round(snapshot_value(item), 2),
                 "nativeAmount": item.amount,
                 "currency": item.account.currency,
                 "date": item.snapshot_date.isoformat(),
                 "source": item.source,
                 "note": item.note,
                 "important": item.important,
-                "rateToPln": item.rate_to_pln,
-                "rateDate": item.rate_date.isoformat() if item.rate_date else None,
             }
             for item in recent
         ],
         "goals": [
-            goal_response(goal, current_net_pln, base_currency, db)
+            goal_response(goal, current_net_pln)
             for goal in goals
         ],
     }
@@ -859,7 +800,6 @@ def activity(
         .limit(page_size)
         .all()
     )
-    base_currency = get_setting(db, "base_currency", "PLN")
     items = []
     for snapshot in snapshots:
         previous = (
@@ -877,9 +817,9 @@ def activity(
             .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
             .first()
         )
-        amount = snapshot_value(snapshot, base_currency, db)
+        amount = snapshot_value(snapshot)
         previous_amount = (
-            snapshot_value(previous, base_currency, db) if previous else None
+            snapshot_value(previous) if previous else None
         )
         items.append(
             {
@@ -906,10 +846,6 @@ def activity(
                 "note": snapshot.note,
                 "important": snapshot.important,
                 "source": snapshot.source,
-                "rateToPln": snapshot.rate_to_pln,
-                "rateDate": (
-                    snapshot.rate_date.isoformat() if snapshot.rate_date else None
-                ),
             }
         )
 
@@ -937,17 +873,33 @@ def monthly_report(month: str, db: Session = Depends(get_db)):
         month_number,
         monthrange(year - 1, month_number)[1],
     )
-    accounts = db.query(Account).filter(Account.archived.is_(False)).all()
-    base_currency = get_setting(db, "base_currency", "PLN")
+    accounts = [
+        account
+        for account in db.query(Account).all()
+        if any(
+            account_active_at(account, cutoff)
+            for cutoff in (period_end, previous_end, year_before_end)
+        )
+    ]
 
     current_assets = current_liabilities = previous_assets = previous_liabilities = 0.0
     year_before_assets = year_before_liabilities = 0.0
     contributions = []
     for account in accounts:
-        current_balance = balance_at(account.id, period_end, base_currency, db)
-        previous_balance = balance_at(account.id, previous_end, base_currency, db)
-        year_before_balance = balance_at(
-            account.id, year_before_end, base_currency, db
+        current_balance = (
+            balance_at(account.id, period_end, db)
+            if account_active_at(account, period_end)
+            else 0.0
+        )
+        previous_balance = (
+            balance_at(account.id, previous_end, db)
+            if account_active_at(account, previous_end)
+            else 0.0
+        )
+        year_before_balance = (
+            balance_at(account.id, year_before_end, db)
+            if account_active_at(account, year_before_end)
+            else 0.0
         )
         raw_change = current_balance - previous_balance
         if account.kind == "asset":
@@ -981,7 +933,7 @@ def monthly_report(month: str, db: Session = Depends(get_db)):
     year_before_net = year_before_assets - year_before_liabilities
     return {
         "month": month,
-        "baseCurrency": base_currency,
+        "baseCurrency": "PLN",
         "periodEnd": period_end.isoformat(),
         "netWorth": round(current_net, 2),
         "assets": round(current_assets, 2),
@@ -1008,7 +960,6 @@ def annual_report(year: int, db: Session = Depends(get_db)):
     first_snapshot = (
         db.query(Snapshot)
         .join(Account)
-        .filter(Account.archived.is_(False))
         .order_by(Snapshot.snapshot_date, Snapshot.id)
         .first()
     )
@@ -1031,7 +982,7 @@ def annual_report(year: int, db: Session = Depends(get_db)):
     change = end_net - start_net
     return {
         "year": year,
-        "baseCurrency": get_setting(db, "base_currency", "PLN"),
+        "baseCurrency": "PLN",
         "netWorth": end_net,
         "assets": year_end["assets"],
         "liabilities": year_end["liabilities"],
@@ -1065,44 +1016,19 @@ def annual_report(year: int, db: Session = Depends(get_db)):
 def settings_info(db: Session = Depends(get_db)):
     return {
         "version": app.version,
-        "baseCurrency": get_setting(db, "base_currency", "PLN"),
+        "baseCurrency": "PLN",
         "dateFormat": get_setting(db, "date_format", "DD.MM.YYYY"),
-        "supportedBaseCurrencies": ["PLN", "EUR", "USD", "GBP", "CHF"],
         "storage": "SQLite",
         "accounts": db.query(Account).count(),
         "snapshots": db.query(Snapshot).count(),
-        "exchangeRates": exchange_rate_status(db),
     }
 
 
 @app.patch("/api/settings")
 def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)):
-    snapshot_days = {
-        value[0] for value in db.query(Snapshot.snapshot_date).distinct().all()
-    }
-    prepare_base_rates(payload.base_currency, snapshot_days, db)
-    set_setting(db, "base_currency", payload.base_currency)
     set_setting(db, "date_format", payload.date_format)
     db.commit()
     return settings_info(db)
-
-
-@app.post("/api/exchange-rates/refresh")
-def refresh_exchange_rates(db: Session = Depends(get_db)):
-    base_currency = get_setting(db, "base_currency", "PLN")
-    currencies = {
-        value[0]
-        for value in db.query(Account.currency)
-        .filter(Account.currency != "PLN")
-        .distinct()
-        .all()
-    }
-    if base_currency != "PLN":
-        currencies.add(base_currency)
-    for currency in sorted(currencies):
-        rate_to_pln(currency, date.today(), db, force_refresh=True)
-    db.commit()
-    return exchange_rate_status(db)
 
 
 @app.get("/api/goals")
@@ -1113,13 +1039,10 @@ def list_goals(db: Session = Depends(get_db)):
 @app.post("/api/goals", status_code=201)
 def create_goal(payload: GoalCreate, db: Session = Depends(get_db)):
     values = payload.model_dump()
-    base_currency = get_setting(db, "base_currency", "PLN")
     if payload.start_date > date.today():
         raise HTTPException(422, "Data startu celu nie może być w przyszłości")
     if not db.query(Snapshot).filter(Snapshot.snapshot_date <= payload.start_date).first():
         raise HTTPException(422, "Brak danych o wartości netto na wybraną datę startu")
-    target_rate, _ = rate_to_pln(base_currency, date.today(), db)
-    values["target_amount"] *= target_rate
     values["start_amount"] = net_worth_at_pln(payload.start_date, db)
     goal = Goal(**values)
     db.add(goal)
@@ -1143,9 +1066,7 @@ def update_goal(goal_id: int, payload: GoalUpdate, db: Session = Depends(get_db)
         goal.start_amount = net_worth_at_pln(start_date, db)
     for key, value in updates.items():
         if key == "target_amount" and value is not None:
-            base_currency = get_setting(db, "base_currency", "PLN")
-            rate, _ = rate_to_pln(base_currency, date.today(), db)
-            value *= rate
+            value = float(value)
         setattr(goal, key, value)
     db.commit()
     return {"id": goal.id}
@@ -1181,6 +1102,7 @@ def export_json(db: Session = Depends(get_db)):
             {
                 column.name: getattr(account, column.name)
                 for column in Account.__table__.columns
+                if column.name != "currency"
             }
             for account in accounts
         ],
@@ -1205,7 +1127,7 @@ def export_csv(db: Session = Depends(get_db)):
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
-        ["account_id", "account_name", "institution", "kind", "category", "date", "amount", "currency", "note", "important", "rate_to_pln", "rate_date", "source"]
+        ["account_id", "account_name", "institution", "kind", "category", "date", "amount", "note", "important", "source"]
     )
     snapshots = (
         db.query(Snapshot)
@@ -1223,11 +1145,8 @@ def export_csv(db: Session = Depends(get_db)):
                 snapshot.account.category,
                 snapshot.snapshot_date.isoformat(),
                 snapshot.amount,
-                snapshot.account.currency,
                 snapshot.note,
                 snapshot.important,
-                snapshot.rate_to_pln,
-                snapshot.rate_date.isoformat() if snapshot.rate_date else "",
                 snapshot.source,
             ]
         )
@@ -1261,14 +1180,19 @@ def _account_import_values(item: dict):
     name = str(item.get("name", "")).strip()
     if not name:
         raise HTTPException(422, "Importowane konto nie ma nazwy")
+    archived = bool(item.get("archived", False))
+    archived_at = _parse_date(
+        item.get("archived_at"), "archived_at", optional=True
+    )
     return {
         "name": name[:120],
         "institution": str(item.get("institution", "")).strip()[:120],
         "kind": kind,
         "category": str(item.get("category", "Inne")).strip()[:60] or "Inne",
-        "currency": str(item.get("currency", "PLN")).upper()[:3],
+        "currency": "PLN",
         "color": str(item.get("color", "#2f6f5e"))[:20],
-        "archived": bool(item.get("archived", False)),
+        "archived": archived,
+        "archived_at": (archived_at or date.today()) if archived else None,
         "update_frequency": str(item.get("update_frequency", "monthly"))[:20],
         "next_update": _parse_date(item.get("next_update"), "next_update", optional=True),
     }
@@ -1279,12 +1203,17 @@ def _snapshot_import_values(item: dict):
         amount = float(item.get("amount"))
     except (TypeError, ValueError):
         raise HTTPException(422, "Snapshot zawiera nieprawidłową kwotę") from None
-    if amount < 0:
+    if amount < 0 or not math.isfinite(amount):
         raise HTTPException(422, "Kwota snapshotu nie może być ujemna")
     try:
         rate = float(item.get("rate_to_pln", 1) or 1)
     except (TypeError, ValueError):
         rate = 1.0
+    if not math.isfinite(rate) or rate <= 0:
+        raise HTTPException(422, "Snapshot zawiera nieprawidłowy kurs")
+    amount *= rate
+    if not math.isfinite(amount):
+        raise HTTPException(422, "Snapshot zawiera nieprawidłową kwotę")
     snapshot_date = _parse_snapshot_date(
         item.get("snapshot_date") or item.get("date")
     )
@@ -1294,11 +1223,6 @@ def _snapshot_import_values(item: dict):
         "note": str(item.get("note", ""))[:300],
         "important": str(item.get("important", "")).lower()
         in {"1", "true", "yes"},
-        "rate_to_pln": rate if rate > 0 else 1.0,
-        "rate_date": _parse_snapshot_date(
-            item.get("rate_date") or snapshot_date,
-            "rate_date",
-        ),
         "source": str(item.get("source", "import"))[:20] or "import",
     }
 
@@ -1379,9 +1303,11 @@ def import_json(payload: dict, mode: str = "merge", db: Session = Depends(get_db
 
         settings_data = payload.get("settings", {})
         if isinstance(settings_data, dict):
-            for key in ("base_currency", "date_format"):
-                if key in settings_data:
-                    set_setting(db, key, str(settings_data[key]))
+            imported_date_format = settings_data.get("date_format")
+            if imported_date_format in {
+                "DD.MM.YYYY", "YYYY-MM-DD", "DD/MM/YYYY"
+            }:
+                set_setting(db, "date_format", imported_date_format)
 
         existing_goals = {
             goal.name.casefold(): goal for goal in db.query(Goal).all()
@@ -1410,12 +1336,6 @@ def import_json(payload: dict, mode: str = "merge", db: Session = Depends(get_db
             ):
                 db.add(goal)
                 existing_goals[name.casefold()] = goal
-        base_currency = get_setting(db, "base_currency", "PLN")
-        snapshot_days = {
-            value[0]
-            for value in db.query(Snapshot.snapshot_date).distinct().all()
-        }
-        prepare_base_rates(base_currency, snapshot_days, db)
         db.commit()
     except HTTPException:
         db.rollback()
@@ -1499,12 +1419,6 @@ def import_csv(payload: dict, db: Session = Depends(get_db)):
                 continue
             db.add(Snapshot(account_id=account.id, **snapshot_values))
             snapshots_created += 1
-        base_currency = get_setting(db, "base_currency", "PLN")
-        snapshot_days = {
-            value[0]
-            for value in db.query(Snapshot.snapshot_date).distinct().all()
-        }
-        prepare_base_rates(base_currency, snapshot_days, db)
         db.commit()
     except HTTPException:
         db.rollback()

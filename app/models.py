@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -17,6 +17,7 @@ class Account(Base):
     currency: Mapped[str] = mapped_column(String(3), default="PLN")
     color: Mapped[str] = mapped_column(String(20), default="#2f6f5e")
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    archived_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     update_frequency: Mapped[str] = mapped_column(String(20), default="monthly")
     next_update: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -37,8 +38,6 @@ class Snapshot(Base):
     amount: Mapped[float] = mapped_column(Float)
     note: Mapped[str] = mapped_column(String(300), default="")
     important: Mapped[bool] = mapped_column(Boolean, default=False)
-    rate_to_pln: Mapped[float] = mapped_column(Float, default=1.0)
-    rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="manual")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC)
@@ -67,14 +66,3 @@ class Goal(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC)
     )
-
-
-class ExchangeRate(Base):
-    __tablename__ = "exchange_rates"
-    __table_args__ = (UniqueConstraint("currency", "effective_date"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    currency: Mapped[str] = mapped_column(String(3), index=True)
-    effective_date: Mapped[date] = mapped_column(Date, index=True)
-    rate_to_pln: Mapped[float] = mapped_column(Float)
-    table: Mapped[str] = mapped_column(String(1), default="A")

@@ -93,10 +93,7 @@
             <label>Instytucja<input name="institution" maxlength="120" placeholder="np. ING"></label>
             <label>Kategoria<select name="category" id="categorySelect"></select></label>
           </div>
-          <div class="form-row">
-            <label>Waluta konta<select name="currency"><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select></label>
-            <label>Częstotliwość<select name="update_frequency"><option value="weekly">Co tydzień</option><option value="monthly" selected>Co miesiąc</option><option value="quarterly">Co kwartał</option><option value="yearly">Co rok</option></select></label>
-          </div>
+          <label>Częstotliwość<select name="update_frequency"><option value="weekly">Co tydzień</option><option value="monthly" selected>Co miesiąc</option><option value="quarterly">Co kwartał</option><option value="yearly">Co rok</option></select></label>
           <label>Saldo początkowe<div class="money-input"><input name="opening_balance" required type="number" min="0" step="0.01" placeholder="0,00"><span id="openingCurrency">PLN</span></div></label>
           <footer class="form-actions"><button type="button" class="button secondary close-modal">Anuluj</button><button class="button primary">Dodaj konto</button></footer>
         </form>
@@ -134,10 +131,6 @@
             <label>Instytucja<input name="institution" maxlength="120"></label>
             <label>Kategoria<select name="category" id="editCategorySelect"></select></label>
           </div>
-          <label>Waluta konta
-            <select name="currency"><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select>
-            <small>Zmiana waluty przeliczy kursy wszystkich zapisanych snapshotów. Kwoty pozostaną bez zmian i będą traktowane jako wartości w nowej walucie.</small>
-          </label>
           <label>Częstotliwość aktualizacji
             <select name="update_frequency">
               <option value="weekly">Co tydzień</option>
@@ -202,12 +195,9 @@
           <section class="settings-section">
             <h3>Preferencje</h3>
             <form id="settingsForm" class="preferences-form">
-              <label>Waluta bazowa<select name="base_currency"><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select></label>
               <label>Format daty<select name="date_format"><option>DD.MM.YYYY</option><option>YYYY-MM-DD</option><option>DD/MM/YYYY</option></select></label>
               <button class="button primary">Zapisz preferencje</button>
             </form>
-            <p class="settings-help">Konta mogą mieć różne waluty. Wartości historyczne przeliczane są po zapisanym kursie średnim NBP.</p>
-            <div class="setting-row"><div><strong>Kursy walut NBP</strong><small id="exchangeRatesDescription">Sprawdzanie danych…</small></div><button type="button" class="button secondary" id="refreshExchangeRates">Pobierz najnowsze</button></div>
             <div class="setting-row"><div><strong>Przechowywanie danych</strong><small>Pojedynczy lokalny plik w wolumenie Dockera</small></div><span class="setting-value">SQLite</span></div>
             <div class="setting-row"><div><strong>Automatyczny backup</strong><small>Codziennie o 03:00 · retencja 7 dni</small></div><span class="setting-value">./backups</span></div>
           </section>

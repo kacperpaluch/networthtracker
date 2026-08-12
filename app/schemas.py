@@ -9,12 +9,15 @@ def reject_future_date(value: date | None) -> date | None:
     return value
 
 
-class AccountCreate(BaseModel):
+class InputModel(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+
+class AccountCreate(InputModel):
     name: str = Field(min_length=1, max_length=120)
     institution: str = Field(default="", max_length=120)
     kind: str = Field(pattern="^(asset|liability)$")
     category: str = Field(min_length=1, max_length=60)
-    currency: str = Field(default="PLN", min_length=3, max_length=3)
     color: str = "#2f6f5e"
     update_frequency: str = Field(
         default="monthly", pattern="^(weekly|monthly|quarterly|yearly)$"
@@ -22,20 +25,18 @@ class AccountCreate(BaseModel):
     opening_balance: float = Field(default=0, ge=0)
 
 
-class AccountUpdate(BaseModel):
+class AccountUpdate(InputModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     institution: str | None = Field(default=None, max_length=120)
     category: str | None = Field(default=None, min_length=1, max_length=60)
     color: str | None = None
-    currency: str | None = Field(default=None, min_length=3, max_length=3)
     archived: bool | None = None
     update_frequency: str | None = Field(
         default=None, pattern="^(weekly|monthly|quarterly|yearly)$"
     )
-    convert_amounts: bool = False
 
 
-class SnapshotCreate(BaseModel):
+class SnapshotCreate(InputModel):
     amount: float = Field(ge=0)
     snapshot_date: date = Field(default_factory=date.today)
     note: str = Field(default="", max_length=300)
@@ -47,7 +48,7 @@ class SnapshotCreate(BaseModel):
     )
 
 
-class SnapshotUpdate(BaseModel):
+class SnapshotUpdate(InputModel):
     amount: float | None = Field(default=None, ge=0)
     snapshot_date: date | None = None
     note: str | None = Field(default=None, max_length=300)
@@ -58,12 +59,12 @@ class SnapshotUpdate(BaseModel):
     )
 
 
-class SyncEntry(BaseModel):
+class SyncEntry(InputModel):
     date: date
     account_name: str = Field(min_length=1, max_length=120)
     value: float = Field(ge=0)
     currency: str | None = Field(
-        default=None, min_length=3, max_length=3, pattern="^[A-Za-z]{3}$"
+        default=None, min_length=3, max_length=3, pattern="^(PLN|pln)$"
     )
 
     _date_not_future = field_validator("date")(reject_future_date)
@@ -99,24 +100,21 @@ class SnapshotOut(BaseModel):
     amount: float
     note: str
     important: bool
-    rate_to_pln: float
-    rate_date: date | None
     source: str
 
 
-class SettingsUpdate(BaseModel):
-    base_currency: str = Field(pattern="^(PLN|EUR|USD|GBP|CHF)$")
+class SettingsUpdate(InputModel):
     date_format: str = Field(pattern="^(DD.MM.YYYY|YYYY-MM-DD|DD/MM/YYYY)$")
 
 
-class GoalCreate(BaseModel):
+class GoalCreate(InputModel):
     name: str = Field(min_length=1, max_length=120)
     target_amount: float
     start_date: date = Field(default_factory=date.today)
     target_date: date | None = None
 
 
-class GoalUpdate(BaseModel):
+class GoalUpdate(InputModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     target_amount: float | None = None
     start_date: date | None = None

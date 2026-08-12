@@ -7,40 +7,21 @@ os.environ["LOAD_DEMO_DATA"] = "true"
 Path("./data/test.db").unlink(missing_ok=True)
 
 from fastapi.testclient import TestClient
+from sqlalchemy import inspect, text
 
 from app.main import app
 from app.main import dashboard_statistics
 from app.main import env_flag
 from app.main import goal_progress
 from app.main import net_worth_at_pln
-from app.main import set_setting
+from app.main import migrate_sqlite_schema
 from app.main import percent_change
 from app.main import STATIC_VERSION
-from app.database import SessionLocal
-from app.fx import rate_to_pln
-from app.models import AppSetting, ExchangeRate, Snapshot
+from app.database import SessionLocal, engine
+from app.models import Snapshot
 
 
 client = TestClient(app)
-
-
-def fake_nbp_response(url: str):
-    effective_date = url.rstrip("/").split("/")[-1]
-
-    class FakeResponse:
-        status_code = 200
-        is_error = False
-
-        @staticmethod
-        def json():
-            return {
-                "rates": [
-                    {"effectiveDate": effective_date, "mid": 4.0}
-                ]
-            }
-
-    return FakeResponse()
-
 
 def test_demo_data_flag_is_opt_in(monkeypatch):
     monkeypatch.delenv("LOAD_DEMO_DATA", raising=False)
@@ -341,7 +322,6 @@ def test_sync_api_rejects_value_in_wrong_currency():
             "name": "Konto tylko PLN",
             "kind": "asset",
             "category": "Gotówka",
-            "currency": "PLN",
             "opening_balance": 100,
         },
     ).json()
@@ -356,9 +336,7 @@ def test_sync_api_rejects_value_in_wrong_currency():
             }
         ],
     )
-    assert response.status_code == 200
-    assert response.json()["created"] == 0
-    assert "Waluta wejściowa USD" in response.json()["errors"][0]["error"]
+    assert response.status_code == 422
 
 
 def test_historical_monthly_report():
@@ -452,93 +430,6 @@ def test_edit_archive_and_restore_account():
     assert restored.json()["archived"] is False
 
 
-def test_change_account_currency_recalculates_snapshot_rates(monkeypatch):
-    monkeypatch.setattr(
-        "app.main.rate_to_pln",
-        lambda currency, day, db, **kwargs: (4.25, day),
-    )
-    account = client.post(
-        "/api/accounts",
-        json={
-            "name": "Konto z błędną walutą",
-            "kind": "asset",
-            "category": "Gotówka",
-            "currency": "PLN",
-            "opening_balance": 100,
-        },
-    ).json()
-
-    changed = client.patch(
-        f"/api/accounts/{account['id']}", json={"currency": "eur"}
-    )
-    assert changed.status_code == 200
-    assert changed.json()["currency"] == "EUR"
-    snapshots = client.get(
-        f"/api/accounts/{account['id']}/snapshots"
-    ).json()
-    assert snapshots[0]["amount"] == 100
-    assert snapshots[0]["rate_to_pln"] == 4.25
-
-
-def test_change_currency_with_same_day_snapshots_does_not_duplicate_fx_cache(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        "app.fx.httpx.get", lambda url, **kwargs: fake_nbp_response(url)
-    )
-    account = client.post(
-        "/api/accounts",
-        json={
-            "name": "Konto z dwoma snapshotami",
-            "kind": "asset",
-            "category": "Gotówka",
-            "currency": "PLN",
-            "opening_balance": 100,
-        },
-    ).json()
-    assert client.post(
-        f"/api/accounts/{account['id']}/snapshots",
-        json={"amount": 110, "snapshot_date": date.today().isoformat()},
-    ).status_code == 201
-
-    changed = client.patch(
-        f"/api/accounts/{account['id']}", json={"currency": "GBP"}
-    )
-    assert changed.status_code == 200
-    assert changed.json()["currency"] == "GBP"
-
-
-def test_change_account_currency_can_preserve_pln_snapshot_values(monkeypatch):
-    rates = {"USD": 4.0, "PLN": 1.0}
-    monkeypatch.setattr(
-        "app.main.rate_to_pln",
-        lambda currency, day, db, **kwargs: (rates[currency], day),
-    )
-    account = client.post(
-        "/api/accounts",
-        json={
-            "name": "Konto USD konwertowane do PLN",
-            "kind": "asset",
-            "category": "Gotówka",
-            "currency": "USD",
-            "opening_balance": 50,
-        },
-    ).json()
-
-    changed = client.patch(
-        f"/api/accounts/{account['id']}",
-        json={"currency": "PLN", "convert_amounts": True},
-    )
-    assert changed.status_code == 200
-    assert changed.json()["currency"] == "PLN"
-    snapshots = client.get(
-        f"/api/accounts/{account['id']}/snapshots"
-    ).json()
-    assert snapshots[0]["amount"] == 200
-    assert snapshots[0]["rate_to_pln"] == 1
-    assert changed.json()["current_balance"] == 200
-
-
 def test_delete_account_also_deletes_its_snapshots():
     account = client.post(
         "/api/accounts",
@@ -557,30 +448,6 @@ def test_delete_account_also_deletes_its_snapshots():
     assert deleted.status_code == 204
     assert client.get(f"/api/accounts/{account['id']}/snapshots").status_code == 404
     assert client.patch(f"/api/snapshots/{snapshot_id}", json={"amount": 20}).status_code == 404
-
-
-def test_manual_exchange_rate_refresh_uses_current_nbp_rate(monkeypatch):
-    calls = []
-
-    def fake_rate(currency, day, db, **kwargs):
-        calls.append((currency, day, kwargs.get("force_refresh")))
-        return 4.25, day
-
-    monkeypatch.setattr("app.main.rate_to_pln", fake_rate)
-    client.post(
-        "/api/accounts",
-        json={
-            "name": "Konto EUR do odświeżenia",
-            "kind": "asset",
-            "category": "Gotówka",
-            "currency": "EUR",
-            "opening_balance": 1,
-        },
-    )
-    calls.clear()
-    response = client.post("/api/exchange-rates/refresh")
-    assert response.status_code == 200
-    assert any(currency == "EUR" and forced is True for currency, _, forced in calls)
 
 
 def test_edit_and_delete_snapshot():
@@ -617,7 +484,7 @@ def test_edit_and_delete_snapshot():
 def test_real_settings_and_date_format():
     response = client.patch(
         "/api/settings",
-        json={"base_currency": "PLN", "date_format": "YYYY-MM-DD"},
+        json={"date_format": "YYYY-MM-DD"},
     )
     assert response.status_code == 200
     assert response.json()["dateFormat"] == "YYYY-MM-DD"
@@ -761,14 +628,7 @@ def test_financial_goal_can_start_at_historical_date():
     assert client.delete(f"/api/goals/{goal['id']}").status_code == 204
 
 
-def test_goal_start_amount_is_stored_directly_in_pln(monkeypatch):
-    monkeypatch.setattr(
-        "app.fx.httpx.get", lambda url, **kwargs: fake_nbp_response(url)
-    )
-    assert client.patch(
-        "/api/settings",
-        json={"base_currency": "EUR", "date_format": "DD.MM.YYYY"},
-    ).status_code == 200
+def test_goal_start_amount_is_stored_directly_in_pln():
     start_date = date(2026, 7, 1)
     with SessionLocal() as db:
         expected_pln = round(net_worth_at_pln(start_date, db), 2)
@@ -776,7 +636,7 @@ def test_goal_start_amount_is_stored_directly_in_pln(monkeypatch):
     created = client.post(
         "/api/goals",
         json={
-            "name": "Cel walutowy z poprawnym startem",
+            "name": "Cel z poprawnym startem",
             "target_amount": 200000,
             "start_date": start_date.isoformat(),
         },
@@ -788,12 +648,6 @@ def test_goal_start_amount_is_stored_directly_in_pln(monkeypatch):
         if goal["id"] == created.json()["id"]
     )
     assert round(exported["start_amount"], 2) == expected_pln
-    assert client.patch(
-        "/api/settings",
-        json={"base_currency": "PLN", "date_format": "DD.MM.YYYY"},
-    ).status_code == 200
-
-
 def test_annual_report_and_year_over_year():
     response = client.get("/api/reports/annual?year=2026")
     assert response.status_code == 200
@@ -805,127 +659,6 @@ def test_annual_report_and_year_over_year():
     monthly = client.get("/api/reports/monthly?month=2026-06").json()
     assert "yearOverYear" in monthly
     assert "yearOverYearPercent" in monthly
-
-
-def test_foreign_currency_uses_rate_saved_with_snapshot(monkeypatch):
-    monkeypatch.setattr(
-        "app.main.rate_to_pln",
-        lambda currency, day, db: (4.0, day),
-    )
-    created = client.post(
-        "/api/accounts",
-        json={
-            "name": "Konto USD",
-            "kind": "asset",
-            "category": "Gotówka",
-            "currency": "USD",
-            "opening_balance": 100,
-            "update_frequency": "weekly",
-        },
-    )
-    assert created.status_code == 201
-    assert created.json()["native_current_balance"] == 100
-    assert created.json()["current_balance"] == 400
-    snapshots = client.get(
-        f"/api/accounts/{created.json()['id']}/snapshots"
-    ).json()
-    assert snapshots[0]["rate_to_pln"] == 4.0
-    recent = client.get("/api/dashboard").json()["recent"]
-    activity = next(item for item in recent if item["account"] == "Konto USD")
-    assert activity["rateToPln"] == 4.0
-    assert activity["rateDate"] == snapshots[0]["rate_date"]
-
-
-def test_weekend_snapshot_uses_friday_nbp_rate_and_checks_once(monkeypatch):
-    weekend = date(2026, 7, 26)
-    friday = date(2026, 7, 24)
-    calls = []
-
-    class FakeResponse:
-        status_code = 200
-        is_error = False
-
-        @staticmethod
-        def json():
-            return {
-                "rates": [
-                    {"effectiveDate": friday.isoformat(), "mid": 2.75}
-                ]
-            }
-
-    def fake_get(url, **kwargs):
-        calls.append(url)
-        return FakeResponse()
-
-    monkeypatch.setattr("app.fx.httpx.get", fake_get)
-    with SessionLocal() as db:
-        db.query(ExchangeRate).filter(ExchangeRate.currency == "CAD").delete()
-        (
-            db.query(AppSetting)
-            .filter(AppSetting.key.like("%CAD%"))
-            .delete(synchronize_session=False)
-        )
-        db.add(
-            ExchangeRate(
-                currency="CAD",
-                effective_date=date(2026, 7, 22),
-                rate_to_pln=2.7,
-                table="A",
-            )
-        )
-        db.commit()
-
-        rate, rate_date = rate_to_pln("CAD", weekend, db)
-        assert rate == 2.75
-        assert rate_date == friday
-        assert len(calls) == 1
-        db.commit()
-
-        cached_rate, cached_date = rate_to_pln("CAD", weekend, db)
-        assert (cached_rate, cached_date) == (2.75, friday)
-        assert len(calls) == 1
-
-
-def test_repeated_rate_lookup_before_commit_does_not_duplicate_cache(monkeypatch):
-    monkeypatch.setattr(
-        "app.fx.httpx.get", lambda url, **kwargs: fake_nbp_response(url)
-    )
-    with SessionLocal() as db:
-        db.query(ExchangeRate).filter(ExchangeRate.currency == "NOK").delete()
-        db.query(AppSetting).filter(
-            AppSetting.key.like("%NOK%")
-        ).delete(synchronize_session=False)
-        db.commit()
-
-        first = rate_to_pln("NOK", date.today(), db)
-        second = rate_to_pln("NOK", date.today(), db)
-        db.commit()
-
-        assert first == second
-        assert db.query(ExchangeRate).filter(
-            ExchangeRate.currency == "NOK"
-        ).count() == 1
-
-
-def test_annual_report_never_calls_nbp_during_get(monkeypatch):
-    monkeypatch.setattr(
-        "app.fx.httpx.get", lambda url, **kwargs: fake_nbp_response(url)
-    )
-    assert client.patch(
-        "/api/settings",
-        json={"base_currency": "EUR", "date_format": "DD.MM.YYYY"},
-    ).status_code == 200
-
-    def unexpected_network(*args, **kwargs):
-        raise AssertionError("GET report must not call NBP")
-
-    monkeypatch.setattr("app.fx.httpx.get", unexpected_network)
-    response = client.get("/api/reports/annual?year=2026")
-    assert response.status_code == 200
-    assert client.patch(
-        "/api/settings",
-        json={"base_currency": "PLN", "date_format": "DD.MM.YYYY"},
-    ).status_code == 200
 
 
 def test_future_snapshot_dates_are_rejected():
@@ -1002,58 +735,123 @@ def test_important_snapshot_note_is_exposed_in_activity():
     assert any(item["note"] == "Premia roczna" and item["important"] for item in recent)
 
 
-def test_rate_before_first_known_fixing_falls_back_to_oldest():
-    """Data sprzed pierwszego kursu nie może wywalać dashboardu (503)."""
-    with SessionLocal() as db:
-        db.query(ExchangeRate).filter(ExchangeRate.currency == "SEK").delete()
-        db.add(
-            ExchangeRate(
-                currency="SEK",
-                effective_date=date(2026, 5, 4),
-                rate_to_pln=0.38,
-                table="A",
+def test_non_finite_amount_is_rejected_without_poisoning_dashboard():
+    response = client.post(
+        "/api/accounts",
+        content=(
+            '{"name":"Nieskończone konto","kind":"asset",'
+            '"category":"Inne","opening_balance":1e400}'
+        ),
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert client.get("/api/dashboard").status_code == 200
+
+
+def test_archiving_account_preserves_earlier_monthly_report():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto zamykane",
+            "kind": "asset",
+            "category": "Inne",
+            "opening_balance": 1000,
+        },
+    ).json()
+    snapshot = client.get(
+        f"/api/accounts/{account['id']}/snapshots"
+    ).json()[0]
+    historical_date = date.today() - timedelta(days=40)
+    assert client.patch(
+        f"/api/snapshots/{snapshot['id']}",
+        json={"snapshot_date": historical_date.isoformat()},
+    ).status_code == 200
+    month = historical_date.strftime("%Y-%m")
+    before = client.get("/api/reports/monthly", params={"month": month}).json()
+    assert client.patch(
+        f"/api/accounts/{account['id']}", json={"archived": True}
+    ).status_code == 200
+    after = client.get("/api/reports/monthly", params={"month": month}).json()
+    assert after["netWorth"] == before["netWorth"]
+
+
+def test_legacy_foreign_currency_backup_is_converted_to_pln():
+    imported = client.post(
+        "/api/import/json?mode=merge",
+        json={
+            "accounts": [
+                {
+                    "id": 800001,
+                    "name": "Stare konto USD",
+                    "kind": "asset",
+                    "category": "Inne",
+                    "currency": "USD",
+                }
+            ],
+            "snapshots": [
+                {
+                    "id": 800001,
+                    "account_id": 800001,
+                    "snapshot_date": date.today().isoformat(),
+                    "amount": 100,
+                    "rate_to_pln": 4,
+                }
+            ],
+        },
+    )
+    assert imported.status_code == 200
+    account = next(
+        item for item in client.get("/api/accounts").json()
+        if item["name"] == "Stare konto USD"
+    )
+    assert account["currency"] == "PLN"
+    assert account["current_balance"] == 400
+
+
+def test_database_migration_converts_existing_foreign_account_once():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Fizyczna migracja USD",
+            "kind": "asset",
+            "category": "Inne",
+            "opening_balance": 100,
+        },
+    ).json()
+    snapshot = client.get(
+        f"/api/accounts/{account['id']}/snapshots"
+    ).json()[0]
+    with engine.begin() as connection:
+        columns = {
+            item["name"] for item in inspect(engine).get_columns("snapshots")
+        }
+        if "rate_to_pln" not in columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE snapshots ADD COLUMN rate_to_pln "
+                    "FLOAT NOT NULL DEFAULT 1.0"
+                )
             )
+        connection.execute(
+            text("UPDATE accounts SET currency = 'USD' WHERE id = :id"),
+            {"id": account["id"]},
         )
-        db.commit()
-
-        rate, rate_date = rate_to_pln(
-            "SEK", date(2024, 2, 23), db, allow_network=False
+        connection.execute(
+            text("UPDATE snapshots SET rate_to_pln = 4 WHERE id = :id"),
+            {"id": snapshot["id"]},
         )
-        assert (rate, rate_date) == (0.38, date(2026, 5, 4))
 
+    migrate_sqlite_schema()
+    migrated = client.get(
+        "/api/accounts", params={"include_archived": True}
+    ).json()
+    migrated_account = next(item for item in migrated if item["id"] == account["id"])
+    assert migrated_account["currency"] == "PLN"
+    assert migrated_account["current_balance"] == 400
 
-def test_imported_goal_with_old_start_date_keeps_dashboard_alive():
-    """Regresja: cel z kopii sprzed cache'owanych kursów blokował całą aplikację."""
-    with SessionLocal() as db:
-        db.query(ExchangeRate).filter(ExchangeRate.currency == "EUR").delete()
-        db.add(
-            ExchangeRate(
-                currency="EUR",
-                effective_date=date.today(),
-                rate_to_pln=4.3,
-                table="A",
-            )
-        )
-        set_setting(db, "base_currency", "EUR")
-        db.commit()
-    try:
-        assert client.post(
-            "/api/import/json?mode=merge",
-            json={
-                "accounts": [],
-                "snapshots": [],
-                "goals": [
-                    {
-                        "name": "Cel z bardzo starej kopii",
-                        "target_amount": 100000,
-                        "start_amount": 5000,
-                        "start_date": "2019-01-01",
-                    }
-                ],
-            },
-        ).status_code == 200
-        assert client.get("/api/dashboard").status_code == 200
-    finally:
-        with SessionLocal() as db:
-            set_setting(db, "base_currency", "PLN")
-            db.commit()
+    migrate_sqlite_schema()
+    unchanged = client.get(
+        "/api/accounts", params={"include_archived": True}
+    ).json()
+    unchanged_account = next(item for item in unchanged if item["id"] == account["id"])
+    assert unchanged_account["current_balance"] == 400

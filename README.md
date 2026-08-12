@@ -8,7 +8,7 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 
 ## Najważniejsze funkcje
 
-- konta aktywów i zobowiązań z edycją waluty, archiwizacją i usuwaniem;
+- konta aktywów i zobowiązań z archiwizacją i usuwaniem;
 - osobny harmonogram aktualizacji każdego konta;
 - przypomnienia i oznaczenia nieaktualnych kont;
 - snapshoty salda z datą, notatką i wyróżnieniem istotnej zmiany;
@@ -18,11 +18,9 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - statystyki zmian za 30 dni, 6 i 12 miesięcy, średniego tempa miesięcznego, najlepszego miesiąca, zadłużenia, rekordu oraz prognozy wartości netto;
 - raport miesięczny ze zmianą m/m procentową i kwotową, raport roczny od pierwszego rzeczywistego miesiąca danych i porównania rok do roku;
 - rozbudowane cele finansowe z kwotą pozostałą do celu, tempem rzeczywistym i wymaganym, statusem względem planu, prognozą terminu oraz wykresem rzeczywistość–plan;
-- konta w PLN, EUR, USD, GBP i CHF;
-- historyczne kursy średnie z NBP zapisywane przy snapshotach;
+- wszystkie kwoty przechowywane bezpośrednio w PLN;
 - idempotentna synchronizacja sald z Actual Budget i n8n;
-- widoczna data ostatnich tabel NBP i ręczne pobranie najnowszych kursów;
-- ustawienia waluty bazowej i formatu dat;
+- ustawienia formatu dat;
 - eksport i import JSON oraz eksport historii do CSV;
 - automatyczne kopie SQLite przez cron.
 
@@ -117,19 +115,13 @@ Do ręcznego odtworzenia zatrzymaj kontener, zastąp plik `networth.db` w
 wolumenie wybraną kopią i ponownie uruchom usługę. Eksport JSON z ustawień jest
 prostszą metodą logicznego przenoszenia danych między instalacjami.
 
-## Waluty
+## Waluta
 
-Kwota snapshotu pozostaje w walucie konta. Dla obcej waluty aplikacja pobiera
-ostatni kurs średni NBP dostępny dla wskazanej daty i zapisuje go lokalnie.
-Weekend lub święto korzysta z ostatniego wcześniejszego notowania. Zmiana
-waluty bazowej wpływa na prezentację i raporty, ale nie zmienia oryginalnych
-kwot. Aktywność pokazuje kurs oraz datę tabeli NBP użyte dla każdego snapshotu.
-Kursy potrzebne dla istniejącej historii są przygotowywane podczas zmiany
-waluty bazowej. Dashboard i raporty korzystają wyłącznie z lokalnego cache i
-nie wykonują blokujących zapytań do NBP podczas odczytu. Dla dat sprzed
-pierwszego znanego notowania (np. cel z bardzo starej kopii) przeliczenie
-korzysta z najstarszego dostępnego kursu, żeby brak jednego notowania nie
-blokował odczytu.
+Worthly przechowuje i prezentuje wszystkie kwoty bezpośrednio w PLN. Wycenę
+kont walutowych należy wykonać po stronie Actual Budget przed synchronizacją.
+Aplikacja nie łączy się z NBP i nie utrzymuje własnego cache kursów. Przy
+pierwszym uruchomieniu wersji 1.6 istniejące konta walutowe są jednorazowo
+przeliczane do PLN według kursu zapisanego wcześniej przy każdym snapshocie.
 
 Główne sumy na dashboardzie są zaokrąglane do pełnych jednostek waluty, żeby
 pozostały czytelne. Widoki kont i raportów pokazują część dziesiętną, gdy jest
@@ -161,9 +153,6 @@ planem” używa tolerancji 3 punktów procentowych. Tempo miesięczne jest licz
 od dnia startu celu, wymagane tempo z pozostałej kwoty i czasu, a prognozowana
 data zakłada utrzymanie dotychczasowego średniego tempa. Są to prognozy liniowe,
 nie gwarancje wyniku inwestycyjnego.
-
-Pierwszy zapis wartości w obcej walucie wymaga dostępu kontenera do
-`https://api.nbp.pl`.
 
 ## Synchronizacja z Actual Budget i n8n
 
@@ -224,31 +213,13 @@ Workflow może codziennie przesyłać ponownie np. siedem ostatnich dni. Dzięki
 upsertowi transakcja dodana z opóźnieniem do Actual Budget skoryguje historię,
 a niezmienione salda nie utworzą duplikatów. Granicą historii jest najstarsza
 data snapshotu konta, niezależnie od kolejności jego utworzenia. Synchronizacja
-nie dopisze sald sprzed tej daty. `value` musi być nieujemną kwotą
-w natywnej walucie konta Worthly. Opcjonalne pole `currency` jest porównywane
-z walutą konta i chroni przed zapisaniem salda PLN jako liczby EUR lub USD.
-Jeśli pole zostanie pominięte, API zakłada natywną walutę konta dla zgodności
-ze starszymi integracjami. Wpływ zobowiązań na wartość netto wynika z typu konta.
+nie dopisze sald sprzed tej daty. `value` musi być nieujemną, skończoną kwotą
+PLN. Opcjonalne pole `currency` może mieć wyłącznie wartość `PLN`; można je też
+pominąć. Wpływ zobowiązań na wartość netto wynika z typu konta.
 
-W zalecanej konfiguracji integracji z Actual Budget wszystkie synchronizowane
-konta Worthly, również te nazwane `USD` i `EUR`, mają walutę `PLN`. Osobny
-workflow najpierw aktualizuje ich wycenę PLN w Actual, a dopiero potem workflow
-Trackera przesyła salda z jawnym `"currency": "PLN"`. Dzięki temu jedna
-integracja pozostaje źródłem prawdy i nie powiela logiki wyceny walut.
-
-Istniejące konto walutowe można bezpiecznie przestawić na PLN przez:
-
-```http
-PATCH /api/accounts/{id}
-Content-Type: application/json
-
-{"currency": "PLN", "convert_amounts": true}
-```
-
-`convert_amounts` zachowuje historyczną wartość PLN: każda kwota jest najpierw
-mnożona przez zapisany przy snapshocie `rate_to_pln`, a następnie przeliczana na
-nową walutę. Bez tej flagi zmiana waluty zachowuje liczby kwot i służy do
-poprawiania błędnie oznaczonej waluty.
+Workflow powinien najpierw zaktualizować wycenę PLN w Actual Budget, a dopiero
+potem przesłać saldo do Worthly. Actual pozostaje dzięki temu jedynym miejscem
+odpowiedzialnym za przeliczanie walut.
 
 ## Rozwój lokalny
 
