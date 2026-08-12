@@ -18,7 +18,8 @@ bazy danych. Nowa instalacja rozpoczyna pracę z pustą bazą.
 - wszystkie salda i raporty bezpośrednio w PLN;
 - eksport/import JSON i eksport CSV;
 - idempotentny endpoint `POST /api/sync` do integracji z Actual Budget i n8n;
-- cron backupujący SQLite do folderu hosta.
+- cron backupujący SQLite do folderu hosta;
+- czytelna typografia, kwoty o stałej szerokości cyfr, kontrast WCAG AA, widoczny focus klawiatury i wsparcie `prefers-reduced-motion`.
 
 ## Docker Compose
 

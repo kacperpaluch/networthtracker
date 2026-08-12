@@ -595,7 +595,7 @@ function drawLineChart(canvas, items, key, color, valueFormatter = compactMoney,
   const setup = setupCanvas(canvas);
   if (!setup || !items.length) return;
   const { context: ctx, width, height } = setup;
-  const pad = { left: 66, right: 12, top: 22, bottom: 28 };
+  const pad = { left: 82, right: 12, top: 22, bottom: 30 };
   const values = items.map((item) => item[key]);
   let min = Math.min(...values);
   let max = Math.max(...values);
@@ -624,16 +624,16 @@ function drawLineChart(canvas, items, key, color, valueFormatter = compactMoney,
 
   function render(activeIndex = null) {
     ctx.clearRect(0, 0, width, height);
-    ctx.font = "10px sans-serif";
+    ctx.font = "12px sans-serif";
     ctx.textAlign = "left";
-    ctx.fillStyle = "#8b8c84";
+    ctx.fillStyle = "#666c68";
     ctx.strokeStyle = "#e9e8e2";
     ctx.lineWidth = 1;
     for (let index = 0; index < 4; index++) {
       const y = pad.top + (height - pad.top - pad.bottom) * index / 3;
       ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
       const value = max - (max - min) * index / 3;
-      ctx.fillText(valueFormatter.format(value), 2, y + 3);
+      ctx.fillText(valueFormatter.format(value), 2, y + 4);
     }
 
     const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
@@ -647,7 +647,7 @@ function drawLineChart(canvas, items, key, color, valueFormatter = compactMoney,
 
     monthTicks.forEach((tick, index) => {
       if (index % monthEvery && index !== monthTicks.length - 1) return;
-      ctx.fillStyle = "#8b8c84"; ctx.textAlign = "center";
+      ctx.fillStyle = "#666c68"; ctx.textAlign = "center";
       ctx.fillText(tick.month, tick.point.x, height - 7);
     });
 
@@ -664,7 +664,7 @@ function drawLineChart(canvas, items, key, color, valueFormatter = compactMoney,
     ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.stroke();
 
     const lines = [dateLabel(item.date || item.snapshot_date), tooltipFormatter.format(item[key])];
-    ctx.font = "bold 11px sans-serif";
+    ctx.font = "bold 13px sans-serif";
     const tooltipWidth = Math.max(...lines.map((line) => ctx.measureText(line).width)) + 20;
     const tooltipHeight = 48;
     let tooltipX = point.x + 12;
@@ -673,9 +673,9 @@ function drawLineChart(canvas, items, key, color, valueFormatter = compactMoney,
     ctx.fillStyle = "#20332c";
     ctx.fillRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
     ctx.textAlign = "left";
-    ctx.fillStyle = "#c9d7d1"; ctx.font = "10px sans-serif";
+    ctx.fillStyle = "#c9d7d1"; ctx.font = "12px sans-serif";
     ctx.fillText(lines[0], tooltipX + 10, tooltipY + 17);
-    ctx.fillStyle = "white"; ctx.font = "bold 11px sans-serif";
+    ctx.fillStyle = "white"; ctx.font = "bold 13px sans-serif";
     ctx.fillText(lines[1], tooltipX + 10, tooltipY + 36);
   }
 

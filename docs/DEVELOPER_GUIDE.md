@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.6.0` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.7.0` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
@@ -217,6 +217,31 @@ konkretne daty, konto (także archiwalne) i źródło oraz doładowuje kolejne 2
 wpisów. Kwoty szczegółowe mają zawsze dwa miejsca po przecinku. Dashboard
 zaokrągla tylko trzy główne sumy; pozostałe widoki używają formatu adaptacyjnego
 do dwóch miejsc po przecinku.
+
+### Konwencje interfejsu
+
+`styles.css` trzyma kilka reguł, które łatwo nieświadomie złamać przy dopisywaniu
+nowych widoków:
+
+- **Skala typografii zaczyna się na 10px.** Etykiety mają 11–12px, tekst wierszy
+  i przycisków 13–14px, nagłówki sekcji 15–16px. Nie schodź poniżej 10px — poniżej
+  tego progu tekst przestaje być czytelny, a nowe rozmiary spłaszczają hierarchię.
+- **Kolory pobieraj z tokenów `:root`**, nie z surowych hexów. `--muted` jest
+  najciemniejszym dopuszczalnym szarym dla tekstu (kontrast 5,4:1 na białym i
+  4,9:1 na `--cream`, czyli WCAG AA).
+- **Nie ustawiaj `outline: 0` na elementach interaktywnych.** Globalna reguła
+  `:focus-visible` rysuje zielony pierścień; pola wewnątrz stylizowanych
+  kontenerów (`.search-box`, `.month-navigator`) obsługuje `:focus-within` na
+  kontenerze.
+- **`font-variant-numeric: tabular-nums` jest ustawione na `body`** — kwoty w
+  tabelach i kartach nie skaczą przy przeliczaniu. Nie nadpisuj tego lokalnie.
+- **Animacje respektują `prefers-reduced-motion`** przez jedną globalną regułę.
+- Interfejs nie ładuje żadnego fontu z sieci ani z repozytorium; używa stosu
+  systemowego, żeby aplikacja działała bez połączenia z internetem.
+
+Etykiety i tooltipy wykresów rysowane na Canvasie w `app.js` mają własne rozmiary
+(`12px` i `bold 13px`) — przy ich zmianie trzeba dopasować `pad.left` w
+`drawLineChart()`, bo od niego zależy szerokość marginesu na podpisy osi.
 
 ### Kontrakt synchronizacji
 
