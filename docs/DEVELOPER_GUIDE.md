@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.7.0` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.8.0` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
@@ -131,12 +131,14 @@ tolerancją 3 punktów procentowych. Prognoza daty jest zwracana tylko dla
 dodatniego tempa prowadzącego w stronę celu i maksymalnego horyzontu 50 lat.
 
 Dashboard zwraca pełną linię czasu. Frontend filtruje ją według kalendarzowych
-zakresów 6 lub 12 miesięcy albo pokazuje całość, rozmieszcza punkty według ich
+zakresów 6 lub 12 miesięcy albo pokazuje całość. Wykres zachowuje ostatni punkt
+dnia dla 6M, tygodnia dla 1R i miesiąca dla MAX, rozmieszcza punkty według ich
 rzeczywistych dat i rysuje jedną etykietę `RRRR-MM` na miesiąc. Wykres canvas
 obsługuje tooltip z pełną datą i dokładną wartością najbliższego punktu.
-Ten sam renderer obsługuje wykres pojedynczego konta. Modal konta filtruje
-snapshoty klientowo według zakresów 3M/6M/1R/MAX lub własnych dat i dzieli
-tabelę historii na strony po 10 wpisów.
+Ten sam renderer obsługuje wykres pojedynczego konta. Modal konta wysyła zakres
+3M/6M/1R/MAX lub własne daty do API i pobiera tylko stronę 10 wpisów. Punkty
+wykresu są agregowane liniowo po stronie serwera: dziennie, tygodniowo albo
+miesięcznie zależnie od zakresu.
 Raport roczny rozpoczyna listę miesięcy od pierwszego snapshotu dostępnego w
 pierwszym roku danych; nie generuje wcześniejszych miesięcy z fikcyjnym zerem.
 Zmiana procentowa używa bezwzględnej wartości bazowej jako mianownika, dzięki
@@ -189,6 +191,7 @@ CSV.
 | `PATCH` | `/api/accounts/{id}` | edycja i archiwizacja |
 | `DELETE` | `/api/accounts/{id}` | trwałe usunięcie konta i snapshotów |
 | `GET/POST` | `/api/accounts/{id}/snapshots` | historia i nowy snapshot |
+| `GET` | `/api/accounts/{id}/history` | stronicowana historia i zagregowany wykres konta |
 | `PATCH/DELETE` | `/api/snapshots/{id}` | korekta lub usunięcie |
 | `POST` | `/api/sync` | idempotentny upsert sald po nazwie konta i dacie |
 | `GET` | `/api/reports/monthly?month=RRRR-MM` | raport miesięczny |
@@ -202,6 +205,12 @@ CSV.
 | `POST` | `/api/import/csv` | import CSV w formacie aplikacji |
 
 Pełny kontrakt jest dostępny w Swagger UI pod `/docs`.
+
+`GET /api/accounts/{id}/history` przyjmuje `date_from`, `date_to`, `page`,
+`page_size` oraz `granularity=daily|weekly|monthly`. Odpowiedź zawiera tylko
+bieżącą stronę tabeli, saldo poprzednie dla każdego wiersza, podsumowanie okresu
+i zagregowane punkty wykresu. Złożony indeks `(account_id, snapshot_date, id)`
+obsługuje stronicowanie oraz wyszukiwanie salda poprzedniego.
 
 ### Aktywność i prezentacja kwot
 

@@ -84,6 +84,14 @@ def migrate_sqlite_schema() -> None:
                     "(SELECT id FROM accounts WHERE currency != 'PLN')"
                 )
             )
+            # The PLN-only model no longer maps legacy FX columns. Leaving a
+            # NOT NULL column behind makes every ORM INSERT fail because the
+            # generated statement cannot provide a value for it.
+            connection.execute(
+                text("ALTER TABLE snapshots DROP COLUMN rate_to_pln")
+            )
+        if "rate_date" in columns:
+            connection.execute(text("ALTER TABLE snapshots DROP COLUMN rate_date"))
         connection.execute(text("UPDATE accounts SET currency = 'PLN'"))
         goal_columns = {
             item["name"] for item in inspect(engine).get_columns("goals")
@@ -107,6 +115,12 @@ def migrate_sqlite_schema() -> None:
                 "WHERE key = 'base_currency' OR key LIKE 'fx_%'"
             )
         )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_snapshots_account_date_id "
+                "ON snapshots (account_id, snapshot_date, id)"
+            )
+        )
 
 
 migrate_sqlite_schema()
@@ -123,7 +137,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.7.0")
+app = FastAPI(title="Worthly", version="1.8.0")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -455,6 +469,104 @@ def account_snapshots(account_id: int, db: Session = Depends(get_db)):
         .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
         .all()
     )
+
+
+def aggregate_snapshot_chart(
+    snapshots: list[Snapshot], granularity: str
+) -> list[dict]:
+    """Keep the last balance in every day, ISO week, or calendar month."""
+    buckets: dict[object, Snapshot] = {}
+    for snapshot in snapshots:
+        if granularity == "monthly":
+            key = (snapshot.snapshot_date.year, snapshot.snapshot_date.month)
+        elif granularity == "weekly":
+            iso = snapshot.snapshot_date.isocalendar()
+            key = (iso.year, iso.week)
+        else:
+            key = snapshot.snapshot_date
+        buckets[key] = snapshot
+    return [
+        {"date": item.snapshot_date.isoformat(), "amount": item.amount}
+        for item in buckets.values()
+    ]
+
+
+@app.get("/api/accounts/{account_id}/history")
+def account_history(
+    account_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    granularity: str = Query(default="daily", pattern="^(daily|weekly|monthly)$"),
+    db: Session = Depends(get_db),
+):
+    account = db.get(Account, account_id)
+    if not account:
+        raise HTTPException(404, "Nie znaleziono konta")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "Data początkowa nie może być późniejsza niż końcowa")
+
+    query = db.query(Snapshot).filter(Snapshot.account_id == account_id)
+    if date_from:
+        query = query.filter(Snapshot.snapshot_date >= date_from)
+    if date_to:
+        query = query.filter(Snapshot.snapshot_date <= date_to)
+
+    total = query.count()
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, pages)
+    items = (
+        query.order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    chart_snapshots = query.order_by(Snapshot.snapshot_date, Snapshot.id).all()
+    chart = aggregate_snapshot_chart(chart_snapshots, granularity)
+    first_amount = chart_snapshots[0].amount if chart_snapshots else 0.0
+    last_amount = chart_snapshots[-1].amount if chart_snapshots else 0.0
+    change = last_amount - first_amount
+
+    response_items = []
+    for snapshot in items:
+        previous = (
+            db.query(Snapshot)
+            .filter(
+                Snapshot.account_id == account_id,
+                or_(
+                    Snapshot.snapshot_date < snapshot.snapshot_date,
+                    and_(
+                        Snapshot.snapshot_date == snapshot.snapshot_date,
+                        Snapshot.id < snapshot.id,
+                    ),
+                ),
+            )
+            .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
+            .first()
+        )
+        response_items.append(
+            {
+                **SnapshotOut.model_validate(snapshot).model_dump(mode="json"),
+                "previousAmount": previous.amount if previous else None,
+            }
+        )
+
+    return {
+        "items": response_items,
+        "chart": chart,
+        "granularity": granularity,
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+        "pages": pages,
+        "hasMore": page < pages,
+        "firstAmount": first_amount,
+        "lastAmount": last_amount,
+        "change": round(change, 2),
+        "changePercent": percent_change(change, first_amount),
+    }
 
 
 @app.post("/api/accounts/{account_id}/snapshots", response_model=SnapshotOut, status_code=201)

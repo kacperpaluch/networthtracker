@@ -131,8 +131,10 @@ miejscami po przecinku.
 
 Zakresy wykresu wartości netto są liczone kalendarzowo: `6M` obejmuje ostatnie
 6 miesięcy, `1R` ostatnie 12 miesięcy, a `MAX` całą dostępną historię. Oś czasu
-używa etykiet `RRRR-MM`, maksymalnie jednej na miesiąc, a najechanie na linię
-pokazuje pełną datę i dokładną wartość punktu. Zmiany procentowe zachowują
+wykresu zachowuje ostatni punkt dnia dla `6M`, tygodnia dla `1R` i miesiąca dla
+`MAX`, a najechanie na linię pokazuje pełną datę i dokładną wartość punktu.
+Historia konta pobiera z serwera tylko bieżącą stronę tabeli i zagregowane dane
+wykresu. Zmiany procentowe zachowują
 kierunek także przy ujemnej wartości netto — pogłębienie zadłużenia jest
 spadkiem, nie dodatnim wynikiem.
 

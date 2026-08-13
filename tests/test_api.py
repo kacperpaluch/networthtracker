@@ -60,6 +60,89 @@ def test_create_account_and_snapshot():
     assert snapshot.json()["amount"] == 5200
 
 
+def test_account_history_is_paginated_and_chart_is_aggregated():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto długiej historii",
+            "kind": "asset",
+            "category": "Oszczędności",
+            "opening_balance": 100,
+        },
+    ).json()
+    opening = client.get(f"/api/accounts/{account['id']}/snapshots").json()[0]
+    assert client.patch(
+        f"/api/snapshots/{opening['id']}",
+        json={"snapshot_date": "2026-01-01"},
+    ).status_code == 200
+    for day, amount in ((2, 110), (3, 120), (8, 150), (9, 175)):
+        assert client.post(
+            f"/api/accounts/{account['id']}/snapshots",
+            json={"snapshot_date": f"2026-01-{day:02d}", "amount": amount},
+        ).status_code == 201
+
+    response = client.get(
+        f"/api/accounts/{account['id']}/history",
+        params={
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "page": 1,
+            "page_size": 2,
+            "granularity": "weekly",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 5
+    assert payload["pages"] == 3
+    assert payload["hasMore"] is True
+    assert len(payload["items"]) == 2
+    assert payload["items"][0]["amount"] == 175
+    assert payload["items"][0]["previousAmount"] == 150
+    assert [point["amount"] for point in payload["chart"]] == [120, 175]
+    assert payload["change"] == 75
+
+
+def test_pln_migration_removes_legacy_required_fx_columns():
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Konto po migracji PLN",
+            "kind": "asset",
+            "category": "Inne",
+            "opening_balance": 100,
+        },
+    ).json()
+    with engine.begin() as connection:
+        columns = {item["name"] for item in inspect(engine).get_columns("snapshots")}
+        if "rate_to_pln" not in columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE snapshots ADD COLUMN rate_to_pln "
+                    "FLOAT NOT NULL DEFAULT 1.0"
+                )
+            )
+        if "rate_date" not in columns:
+            connection.execute(text("ALTER TABLE snapshots ADD COLUMN rate_date DATE"))
+
+    migrate_sqlite_schema()
+    columns = {item["name"] for item in inspect(engine).get_columns("snapshots")}
+    assert "rate_to_pln" not in columns
+    assert "rate_date" not in columns
+    response = client.post(
+        "/api/sync",
+        json=[
+            {
+                "date": date.today().isoformat(),
+                "account_name": account["name"],
+                "value": 125,
+                "currency": "PLN",
+            }
+        ],
+    )
+    assert response.status_code == 200
+
+
 def test_activity_filters_paginates_and_calculates_changes():
     account = client.post(
         "/api/accounts",

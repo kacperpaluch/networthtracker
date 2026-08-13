@@ -9,6 +9,7 @@ const state = {
   allAccounts: null,
   showArchived: false,
   historySnapshots: [],
+  historyData: null,
   history: { range: "1y", from: "", to: "", page: 1, pageSize: 10 },
   activity: {
     items: [],
@@ -94,6 +95,23 @@ function filterTimelineByRange(items, range) {
   const latest = dateValue(items.at(-1).date || items.at(-1).snapshot_date);
   const cutoff = subtractMonths(latest, months);
   return items.filter((item) => dateValue(item.date || item.snapshot_date) >= cutoff);
+}
+function aggregateTimelineForChart(items, range) {
+  if (range === "6m") return items;
+  const buckets = new Map();
+  items.forEach((item) => {
+    const value = dateValue(item.date || item.snapshot_date);
+    let key;
+    if (range === "max") {
+      key = `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+    } else {
+      const monday = new Date(value);
+      monday.setDate(value.getDate() - ((value.getDay() + 6) % 7));
+      key = monday.toISOString().slice(0, 10);
+    }
+    buckets.set(key, item);
+  });
+  return [...buckets.values()];
 }
 function esc(value) {
   return String(value ?? "")
@@ -264,7 +282,10 @@ function renderDashboard() {
     </section>
     ${goals.length ? `<section class="panel goals-preview"><header class="panel-head"><div><h2>Cele finansowe</h2><p>Postęp względem wartości netto</p></div><button class="text-button" data-view="goals">Zobacz cele ›</button></header>${goals.slice(0, 2).map((goal) => goalCard(goal, true)).join("")}</section>` : ""}`;
   requestAnimationFrame(() => {
-    const timeline = filterTimelineByRange(state.dashboard.timeline, state.chartRange);
+    const timeline = aggregateTimelineForChart(
+      filterTimelineByRange(state.dashboard.timeline, state.chartRange),
+      state.chartRange,
+    );
     drawLineChart($("#netWorthChart"), timeline, "netWorth", "#2f6f5e");
     drawDonut($("#allocationChart"), allocation.map((item) => item.value), allocation.map((item) => item.color));
   });
@@ -815,43 +836,59 @@ async function openHistory(accountId) {
   $("#historySubtitle").textContent = `${account.institution} · ${account.category}`;
   $("#historyContent").innerHTML = `<div class="skeleton" style="height:430px"></div>`;
   showModal("historyModal");
-  try {
-    const snapshots = await api(`/accounts/${account.id}/snapshots`);
-    state.historySnapshots = snapshots;
-    applyHistoryRange("1y");
-  } catch (error) {
-    $("#historyContent").innerHTML = `<p>${esc(error.message)}</p>`;
-  }
+  applyHistoryRange("1y");
 }
 
 function applyHistoryRange(range) {
-  const latest = state.historySnapshots[0]?.snapshot_date || isoDateOffset();
+  const latest = state.selectedAccount?.last_updated || isoDateOffset();
   state.history.range = range;
   state.history.to = latest;
   state.history.from = range === "max"
     ? ""
     : subtractMonths(dateValue(latest), range === "3m" ? 3 : range === "6m" ? 6 : 12).toISOString().slice(0, 10);
   state.history.page = 1;
-  renderAccountHistory();
+  loadAccountHistory();
+}
+
+function historyGranularity() {
+  if (state.history.range === "max") return "monthly";
+  if (state.history.range === "1y") return "weekly";
+  if (!state.history.from || !state.history.to) return "monthly";
+  const days = (dateValue(state.history.to) - dateValue(state.history.from)) / 86400000;
+  return days > 550 ? "monthly" : days > 180 ? "weekly" : "daily";
+}
+
+async function loadAccountHistory() {
+  const account = state.selectedAccount;
+  if (!account) return;
+  const params = new URLSearchParams({
+    page: state.history.page,
+    page_size: state.history.pageSize,
+    granularity: historyGranularity(),
+  });
+  if (state.history.from) params.set("date_from", state.history.from);
+  if (state.history.to) params.set("date_to", state.history.to);
+  $("#historyContent").innerHTML = `<div class="skeleton" style="height:430px"></div>`;
+  try {
+    state.historyData = await api(`/accounts/${account.id}/history?${params}`);
+    state.historySnapshots = state.historyData.items;
+    renderAccountHistory();
+  } catch (error) {
+    $("#historyContent").innerHTML = `<p>${esc(error.message)}</p>`;
+  }
 }
 
 function renderAccountHistory() {
   const account = state.selectedAccount;
-  if (!account) return;
-  const filtered = state.historySnapshots.filter((snapshot) =>
-    (!state.history.from || snapshot.snapshot_date >= state.history.from)
-    && (!state.history.to || snapshot.snapshot_date <= state.history.to)
-  );
-  const chronological = [...filtered].reverse();
-  const change = chronological.length > 1 ? chronological.at(-1).amount - chronological[0].amount : 0;
-  const percent = chronological.length > 1 && chronological[0].amount ? change / Math.abs(chronological[0].amount) * 100 : 0;
+  const data = state.historyData;
+  if (!account || !data) return;
+  state.history.page = data.page;
+  const change = data.change;
+  const percent = data.changePercent;
   const favorable = account.kind === "asset" ? change >= 0 : change <= 0;
   const accountMoney = (value) => nativeMoney(value, account.currency);
   const accountSigned = (value) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${accountMoney(Math.abs(value))}`;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / state.history.pageSize));
-  state.history.page = Math.min(state.history.page, totalPages);
-  const pageStart = (state.history.page - 1) * state.history.pageSize;
-  const pageItems = filtered.slice(pageStart, pageStart + state.history.pageSize);
+  const pageStart = (data.page - 1) * data.pageSize;
   $("#historyContent").innerHTML = `
       <div class="history-summary">
         <div><span>Aktualne saldo</span><strong>${accountMoney(account.native_current_balance)}</strong></div>
@@ -868,22 +905,20 @@ function renderAccountHistory() {
           <button class="button secondary" type="submit">Zastosuj</button>
         </form>
       </div>
-      ${filtered.length ? `<div class="history-chart"><canvas id="historyChart"></canvas></div>` : `<div class="empty-state history-empty"><strong>Brak zapisów w tym okresie</strong><p>Zmień zakres albo wyczyść datę początkową.</p></div>`}
+      ${data.total ? `<div class="history-chart"><canvas id="historyChart"></canvas></div>` : `<div class="empty-state history-empty"><strong>Brak zapisów w tym okresie</strong><p>Zmień zakres albo wyczyść datę początkową.</p></div>`}
       <div class="history-table">
         <div class="history-row head"><span>Data</span><span>Notatka</span><span>Zmiana</span><span>Saldo</span><span></span></div>
-        ${pageItems.map((snapshot) => {
-          const snapshotIndex = state.historySnapshots.findIndex((item) => item.id === snapshot.id);
-          const older = state.historySnapshots[snapshotIndex + 1];
-          const delta = older ? snapshot.amount - older.amount : 0;
+        ${data.items.map((snapshot) => {
+          const delta = snapshot.previousAmount == null ? 0 : snapshot.amount - snapshot.previousAmount;
           const deltaFavorable = account.kind === "asset" ? delta >= 0 : delta <= 0;
-          return `<div class="history-row ${snapshot.important ? "important-change" : ""}"><span>${snapshot.important ? "★ " : ""}${dateLabel(snapshot.snapshot_date)}</span><span class="note">${esc(snapshot.note || (snapshot.source === "seed" ? "Dane demonstracyjne" : "Aktualizacja salda"))}</span><span class="${deltaFavorable ? "positive" : "negative"}">${older ? accountSigned(delta) : "—"}</span><strong>${accountMoney(snapshot.amount)}</strong><button class="snapshot-action" data-edit-snapshot="${snapshot.id}" aria-label="Edytuj snapshot z ${dateLabel(snapshot.snapshot_date)}">✎</button></div>`;
+          return `<div class="history-row ${snapshot.important ? "important-change" : ""}"><span>${snapshot.important ? "★ " : ""}${dateLabel(snapshot.snapshot_date)}</span><span class="note">${esc(snapshot.note || (snapshot.source === "seed" ? "Dane demonstracyjne" : "Aktualizacja salda"))}</span><span class="${deltaFavorable ? "positive" : "negative"}">${snapshot.previousAmount == null ? "—" : accountSigned(delta)}</span><strong>${accountMoney(snapshot.amount)}</strong><button class="snapshot-action" data-edit-snapshot="${snapshot.id}" aria-label="Edytuj snapshot z ${dateLabel(snapshot.snapshot_date)}">✎</button></div>`;
         }).join("")}
       </div>
-      <div class="history-pagination"><span>${filtered.length ? `${pageStart + 1}–${Math.min(pageStart + state.history.pageSize, filtered.length)} z ${filtered.length}` : "0 zapisów"}</span><div><button class="button secondary" data-history-page="prev" ${state.history.page <= 1 ? "disabled" : ""}>← Poprzednie</button><button class="button secondary" data-history-page="next" ${state.history.page >= totalPages ? "disabled" : ""}>Następne →</button></div></div>`;
-  if (!filtered.length) return;
+      <div class="history-pagination"><span>${data.total ? `${pageStart + 1}–${Math.min(pageStart + data.pageSize, data.total)} z ${data.total}` : "0 zapisów"}</span><div><button class="button secondary" data-history-page="prev" ${data.page <= 1 ? "disabled" : ""}>← Poprzednie</button><button class="button secondary" data-history-page="next" ${!data.hasMore ? "disabled" : ""}>Następne →</button></div></div>`;
+  if (!data.total) return;
   const accountCompact = new Intl.NumberFormat("pl-PL", { notation: "compact", style: "currency", currency: account.currency, maximumFractionDigits: 1 });
   const accountDetail = new Intl.NumberFormat("pl-PL", { style: "currency", currency: account.currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  requestAnimationFrame(() => drawLineChart($("#historyChart"), chronological, "amount", account.color, accountCompact, accountDetail));
+  requestAnimationFrame(() => drawLineChart($("#historyChart"), data.chart, "amount", account.color, accountCompact, accountDetail));
 }
 
 function openEditAccount(accountId) {
@@ -947,7 +982,7 @@ document.addEventListener("click", (event) => {
   const historyPage = event.target.closest("[data-history-page]");
   if (historyPage && !historyPage.disabled) {
     state.history.page += historyPage.dataset.historyPage === "next" ? 1 : -1;
-    renderAccountHistory();
+    loadAccountHistory();
   }
   const editAccountButton = event.target.closest("[data-edit-account]");
   if (editAccountButton) openEditAccount(Number(editAccountButton.dataset.editAccount));
@@ -1101,7 +1136,7 @@ $("#historyContent").addEventListener("submit", (event) => {
   state.history.to = String(form.get("to") || "");
   state.history.range = "custom";
   state.history.page = 1;
-  renderAccountHistory();
+  loadAccountHistory();
 });
 $("#accountForm").addEventListener("submit", async (event) => {
   event.preventDefault();
