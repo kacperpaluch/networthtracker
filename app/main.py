@@ -137,7 +137,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.8.0")
+app = FastAPI(title="Worthly", version="1.8.1")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -179,24 +179,13 @@ def set_setting(db: Session, key: str, value: str) -> None:
         db.flush()
 
 
-def snapshot_value(snapshot: Snapshot) -> float:
-    return snapshot.amount
-
-
 def goal_response(goal: Goal, current_net_pln: float) -> dict:
-    target = goal.target_amount
-    start = goal.start_amount
-    current_for_goal = current_net_pln
     progress = goal_progress(
         goal.start_amount, current_net_pln, goal.target_amount
     )
     direction = 1 if goal.target_amount >= goal.start_amount else -1
-    remaining_pln = max(
-        0.0, (goal.target_amount - current_net_pln) * direction
-    )
-    gained_pln = (current_net_pln - goal.start_amount) * direction
-    remaining = remaining_pln
-    gained = gained_pln
+    remaining = max(0.0, (goal.target_amount - current_net_pln) * direction)
+    gained = (current_net_pln - goal.start_amount) * direction
 
     elapsed_days = max(0, (date.today() - goal.start_date).days)
     monthly_pace = (
@@ -232,12 +221,12 @@ def goal_response(goal: Goal, current_net_pln: float) -> dict:
     return {
         "id": goal.id,
         "name": goal.name,
-        "targetAmount": round(target, 2),
-        "startAmount": round(start, 2),
+        "targetAmount": round(goal.target_amount, 2),
+        "startAmount": round(goal.start_amount, 2),
         "startDate": goal.start_date.isoformat(),
         "targetDate": goal.target_date.isoformat() if goal.target_date else None,
         "completed": goal.completed,
-        "currentAmount": round(current_for_goal, 2),
+        "currentAmount": round(current_net_pln, 2),
         "progress": progress,
         "remainingAmount": round(remaining, 2),
         "gainedAmount": round(gained, 2),
@@ -323,16 +312,13 @@ def dashboard_statistics(timeline: list[dict]) -> dict:
         if value is not None:
             monthly_points.append({"month": month.strftime("%Y-%m"), "value": value})
 
-    monthly_changes = []
-    for previous, current_month in zip(monthly_points, monthly_points[1:]):
-        if previous["month"] == current_month["month"]:
-            continue
-        monthly_changes.append(
-            {
-                "month": current_month["month"],
-                "amount": round(current_month["value"] - previous["value"], 2),
-            }
-        )
+    monthly_changes = [
+        {
+            "month": current_month["month"],
+            "amount": round(current_month["value"] - previous["value"], 2),
+        }
+        for previous, current_month in zip(monthly_points, monthly_points[1:])
+    ]
     best_month = max(monthly_changes, key=lambda item: item["amount"], default=None)
     average = (
         round(sum(item["amount"] for item in monthly_changes) / len(monthly_changes), 2)
@@ -386,20 +372,12 @@ def net_worth_at_pln(cutoff: date, db: Session) -> float:
 
 def account_response(account: Account, db: Session) -> AccountOut:
     ordered = sorted(account.snapshots, key=lambda item: (item.snapshot_date, item.id), reverse=True)
-    native_current = ordered[0].amount if ordered else 0
-    native_previous = ordered[1].amount if len(ordered) > 1 else native_current
-    current = snapshot_value(ordered[0]) if ordered else 0
-    previous = (
-        snapshot_value(ordered[1])
-        if len(ordered) > 1
-        else current
-    )
+    current = ordered[0].amount if ordered else 0
+    previous = ordered[1].amount if len(ordered) > 1 else current
     return AccountOut(
         **{column.name: getattr(account, column.name) for column in Account.__table__.columns if column.name not in {"created_at"}},
         current_balance=current,
         previous_balance=previous,
-        native_current_balance=native_current,
-        native_previous_balance=native_previous,
         last_updated=ordered[0].snapshot_date if ordered else None,
         change=current - previous,
     )
@@ -726,7 +704,7 @@ def balance_at(account_id: int, cutoff: date, db: Session) -> float:
         .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
         .first()
     )
-    return snapshot_value(snapshot) if snapshot else 0.0
+    return snapshot.amount if snapshot else 0.0
 
 
 @app.patch("/api/snapshots/{snapshot_id}", response_model=SnapshotOut)
@@ -804,7 +782,7 @@ def dashboard(db: Session = Depends(get_db)):
         for snapshot in snapshots_by_date[point_date]:
             account = accounts_by_id[snapshot.account_id]
             previous_value = running_values.get(account.id, 0.0)
-            value = snapshot_value(snapshot)
+            value = snapshot.amount
             running_values[account.id] = value
             if account.kind == "asset":
                 running_assets += value - previous_value
@@ -862,7 +840,7 @@ def dashboard(db: Session = Depends(get_db)):
                 "id": item.id,
                 "account": item.account.name,
                 "kind": item.account.kind,
-                "amount": round(snapshot_value(item), 2),
+                "amount": round(item.amount, 2),
                 "nativeAmount": item.amount,
                 "currency": item.account.currency,
                 "date": item.snapshot_date.isoformat(),
@@ -929,10 +907,8 @@ def activity(
             .order_by(Snapshot.snapshot_date.desc(), Snapshot.id.desc())
             .first()
         )
-        amount = snapshot_value(snapshot)
-        previous_amount = (
-            snapshot_value(previous) if previous else None
-        )
+        amount = snapshot.amount
+        previous_amount = previous.amount if previous else None
         items.append(
             {
                 "id": snapshot.id,

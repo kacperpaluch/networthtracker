@@ -812,7 +812,7 @@ function setAccountKind(kind) {
 }
 function openUpdateModal(accountId) {
   const accounts = state.dashboard.accounts;
-  $("#updateAccount").innerHTML = accounts.map((account) => `<option value="${account.id}">${esc(account.name)} · ${nativeMoney(account.native_current_balance, account.currency)}</option>`).join("");
+  $("#updateAccount").innerHTML = accounts.map((account) => `<option value="${account.id}">${esc(account.name)} · ${nativeMoney(account.current_balance, account.currency)}</option>`).join("");
   $("#updateAccount").value = accountId || accounts[0]?.id;
   syncUpdateAccount();
   $("#updateForm [name=snapshot_date]").value = new Date().toISOString().slice(0, 10);
@@ -824,9 +824,9 @@ function openUpdateModal(accountId) {
 function syncUpdateAccount() {
   const account = state.dashboard.accounts.find((item) => item.id === Number($("#updateAccount").value));
   if (!account) return;
-  $("#currentBalance").textContent = nativeMoney(account.native_current_balance, account.currency);
+  $("#currentBalance").textContent = nativeMoney(account.current_balance, account.currency);
   $("#updateCurrency").textContent = account.currency;
-  $("#updateForm [name=amount]").value = account.native_current_balance;
+  $("#updateForm [name=amount]").value = account.current_balance;
 }
 async function openHistory(accountId) {
   const account = findAccount(accountId);
@@ -891,7 +891,7 @@ function renderAccountHistory() {
   const pageStart = (data.page - 1) * data.pageSize;
   $("#historyContent").innerHTML = `
       <div class="history-summary">
-        <div><span>Aktualne saldo</span><strong>${accountMoney(account.native_current_balance)}</strong></div>
+        <div><span>Aktualne saldo</span><strong>${accountMoney(account.current_balance)}</strong></div>
         <div><span>Zmiana w wybranym okresie</span><strong class="${favorable ? "positive" : "negative"}">${accountSigned(change)}</strong><small>${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%</small></div>
         <button class="button primary" data-update="${account.id}">↻ Aktualizuj saldo</button>
       </div>

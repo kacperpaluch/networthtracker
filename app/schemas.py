@@ -63,6 +63,8 @@ class SyncEntry(InputModel):
     date: date
     account_name: str = Field(min_length=1, max_length=120)
     value: float = Field(ge=0)
+    # Nieużywane w logice, ale InputModel ma extra="forbid" — usunięcie tego
+    # pola zwróciłoby 422 integracjom n8n z poprzedniej wersji.
     currency: str | None = Field(
         default=None, min_length=3, max_length=3, pattern="^(PLN|pln)$"
     )
@@ -85,8 +87,6 @@ class AccountOut(BaseModel):
     next_update: date | None
     current_balance: float
     previous_balance: float
-    native_current_balance: float
-    native_previous_balance: float
     last_updated: date | None
     change: float
 
