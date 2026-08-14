@@ -40,6 +40,7 @@ button { cursor: pointer; }
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   left: 0;
   padding: 27px 18px 20px;
   position: fixed;
@@ -352,7 +353,7 @@ button { cursor: pointer; }
 .donut-center strong { font-size: 19px; }
 .donut-center small { color: var(--muted); font-size: 11px; }
 .legend { display: grid; gap: 8px 18px; grid-template-columns: 1fr 1fr; }
-.legend div { align-items: center; color: var(--muted); display: flex; font-size: 12px; justify-content: space-between; }
+.legend div { align-items: center; color: var(--muted); display: flex; font-size: 12px; gap: 6px; justify-content: space-between; }
 .legend i { border-radius: 50%; height: 7px; margin-right: 6px; width: 7px; }
 .legend span { align-items: center; display: flex; }
 .legend strong { color: var(--ink); }
@@ -610,8 +611,8 @@ button { cursor: pointer; }
 .history-presets button { background: none; border: 0; border-radius: 6px; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; padding: 8px 11px; }
 .history-presets button.active { background: white; box-shadow: 0 1px 4px #0001; color: var(--green); }
 .history-filters { align-items: end; display: flex; gap: 8px; }
-.history-filters label { color: var(--muted); display: grid; font-size: 11px; gap: 3px; }
-.history-filters input { border: 1px solid var(--line); border-radius: 7px; font: inherit; padding: 7px 9px; }
+.history-filters label { color: var(--muted); display: grid; font-size: 11px; gap: 3px; min-width: 0; }
+.history-filters input { border: 1px solid var(--line); border-radius: 7px; font: inherit; min-width: 0; padding: 7px 9px; width: 100%; }
 .history-empty { margin-top: 18px; }
 .history-table { border: 1px solid var(--line); border-radius: 10px; margin-top: 17px; max-height: 240px; overflow: auto; }
 .history-row { align-items: center; border-bottom: 1px solid var(--line); display: grid; font-size: 12px; gap: 10px; grid-template-columns: 110px 1fr 105px 110px 28px; min-height: 42px; padding: 0 13px; }
@@ -808,6 +809,16 @@ button { cursor: pointer; }
   .topbar { padding: 0 18px; }
   .main-content { padding: 22px 18px 36px; }
   .desktop-action { display: none; }
+  /* iOS przybliża stronę przy fokusie na polu mniejszym niż 16px */
+  .form input, .form select, .activity-filters input, .activity-filters select,
+  .history-filters input, .month-picker input, .import-mode select,
+  .preferences-form select, .search-box input { font-size: 16px; }
+  .activity-filters input, .activity-filters select { height: 42px; }
+  .icon-button { height: 44px; width: 44px; }
+  .button, .account-name { min-height: 44px; }
+  .row-action, .snapshot-action { min-height: 44px; min-width: 44px; }
+  .text-button, .card-actions button, .goal-actions button { min-height: 44px; }
+  .range-control button, .history-presets button, .activity-presets button, .report-tabs button { min-height: 40px; }
   .hero-card { gap: 20px; grid-template-columns: 1fr 1fr; padding: 24px; }
   .hero-copy { grid-column: 1/-1; }
   .hero-divider { display: none; }
@@ -815,8 +826,11 @@ button { cursor: pointer; }
   .main-grid, .report-grid { grid-template-columns: 1fr; }
   .account-grid { grid-template-columns: 1fr 1fr; }
   .table-head { display: none; }
-  .table-row { grid-template-columns: 1fr auto auto; padding: 13px 18px; }
-  .table-row > *:nth-child(2), .table-row > *:nth-child(3), .table-row > *:nth-child(4) { display: none; }
+  .table-row { column-gap: 10px; grid-template-columns: minmax(0,1fr) auto auto; padding: 13px 18px; row-gap: 7px; }
+  .table-row > *:nth-child(2) { grid-area: 2 / 1; }
+  .table-row > *:nth-child(3), .table-row > *:nth-child(4) { display: none; }
+  .table-row > *:nth-child(5) { grid-area: 1 / 2 / 3 / 3; }
+  .table-row > *:nth-child(6) { grid-area: 1 / 3 / 3 / 4; }
   .balance-sheet-content { grid-template-columns: 230px 1fr; }
   .activity-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .activity-item { grid-template-columns: auto minmax(0,1fr) auto; padding: 12px 0; }
@@ -828,12 +842,13 @@ button { cursor: pointer; }
 }
 @media (max-width: 560px) {
   .page-title small { display: none; }
+  .legend { grid-template-columns: 1fr; }
   .notification-panel { position: fixed; right: 12px; top: 68px; width: calc(100vw - 24px); }
   .top-actions .primary span { display: none; }
   .hero-card, .report-hero { grid-template-columns: 1fr; }
   .hero-copy { grid-column: auto; }
   .account-grid, .report-metrics, .balance-sheet-content { grid-template-columns: 1fr; }
-  .view-heading { align-items: flex-start; gap: 14px; }
+  .view-heading { align-items: stretch; flex-direction: column; gap: 14px; }
   .view-actions { align-items: stretch; flex-direction: column; }
   .form-row { grid-template-columns: 1fr; }
   .report-actions { align-items: stretch; flex-direction: column; width: 100%; }
@@ -847,7 +862,15 @@ button { cursor: pointer; }
   .history-toolbar { align-items: stretch; flex-direction: column; }
   .history-filters { display: grid; grid-template-columns: 1fr 1fr; }
   .history-filters .button { grid-column: 1/-1; }
-  .history-row { grid-template-columns: 85px 1fr 95px 28px; }
+  .history-row { column-gap: 8px; grid-template-columns: minmax(0,1fr) auto 44px; padding: 6px 10px; row-gap: 2px; }
+  .history-row > *:nth-child(3) { grid-area: 2 / 1; text-align: left; }
+  .history-row > *:nth-child(4) { grid-area: 1 / 2 / 3 / 3; }
+  .history-row > *:nth-child(5) { grid-area: 1 / 3 / 3 / 4; }
+  .form-actions { flex-wrap: wrap; }
+  .form-actions .action-spacer { display: none; }
+  .form-actions .button { flex: 1 1 auto; }
+  .account-danger-actions { display: flex; width: 100%; }
+  .account-danger-actions .button { flex: 1; }
   .history-row > *:nth-child(2) { display: none; }
   .settings-footer { align-items: flex-start; flex-direction: column; gap: 12px; }
   .export-actions { flex-direction: column; }

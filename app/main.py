@@ -137,7 +137,7 @@ if env_flag("LOAD_DEMO_DATA"):
     with SessionLocal() as startup_db:
         seed_database(startup_db)
 
-app = FastAPI(title="Worthly", version="1.8.1")
+app = FastAPI(title="Worthly", version="1.8.2")
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 

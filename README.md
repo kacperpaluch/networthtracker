@@ -23,7 +23,8 @@ Całość działa lokalnie w jednym kontenerze i zapisuje dane w SQLite.
 - ustawienia formatu dat;
 - eksport i import JSON oraz eksport historii do CSV;
 - automatyczne kopie SQLite przez cron;
-- czytelny interfejs: kwoty w kolumnach nie skaczą, kontrast tekstu spełnia WCAG AA, nawigacja klawiaturą ma widoczny focus, a animacje respektują systemowe ograniczenie ruchu.
+- czytelny interfejs: kwoty w kolumnach nie skaczą, kontrast tekstu spełnia WCAG AA, nawigacja klawiaturą ma widoczny focus, a animacje respektują systemowe ograniczenie ruchu;
+- obsługa telefonu: układ sprawdzony od 320 px wzwyż bez poziomego przewijania, pola formularzy bez przybliżania strony na iOS, cele dotykowe 44 px, menu zamykane dotknięciem obok lub klawiszem Escape.
 
 Nie ma logowania ani połączeń z bankami. Projekt zakłada jednego użytkownika
 i uruchomienie w zaufanej sieci lokalnej.

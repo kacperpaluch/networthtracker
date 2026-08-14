@@ -7,6 +7,7 @@ const state = {
   reportMode: "monthly",
   selectedAccount: null,
   allAccounts: null,
+  accountQuery: "",
   showArchived: false,
   historySnapshots: [],
   historyData: null,
@@ -360,7 +361,8 @@ function renderGoals() {
   requestAnimationFrame(() => goals.forEach((goal) => drawGoalChart($(`#goalChart-${goal.id}`), goal)));
 }
 
-async function renderAccounts(query = "") {
+async function renderAccounts(query = state.accountQuery) {
+  state.accountQuery = query;
   if (!state.allAccounts) {
     try {
       state.allAccounts = await api("/accounts?include_archived=true");
@@ -669,7 +671,9 @@ function drawLineChart(canvas, items, key, color, valueFormatter = compactMoney,
     monthTicks.forEach((tick, index) => {
       if (index % monthEvery && index !== monthTicks.length - 1) return;
       ctx.fillStyle = "#666c68"; ctx.textAlign = "center";
-      ctx.fillText(tick.month, tick.point.x, height - 7);
+      const half = ctx.measureText(tick.month).width / 2;
+      const labelX = Math.min(Math.max(tick.point.x, half + 2), width - half - 2);
+      ctx.fillText(tick.month, labelX, height - 7);
     });
 
     if (activeIndex == null) return;
@@ -717,6 +721,7 @@ function drawLineChart(canvas, items, key, color, valueFormatter = compactMoney,
     render(nearest);
   });
   canvas.addEventListener("pointerleave", () => render());
+  canvas.addEventListener("pointercancel", () => render());
 }
 function drawGoalChart(canvas, goal) {
   const setup = setupCanvas(canvas);
@@ -1061,6 +1066,16 @@ $("#updateAccount").addEventListener("change", syncUpdateAccount);
 $("#retryButton").addEventListener("click", loadDashboard);
 $("#openMenu").addEventListener("click", () => $("#sidebar").classList.add("open"));
 $("#closeMenu").addEventListener("click", () => $("#sidebar").classList.remove("open"));
+$(".content").addEventListener("pointerdown", (event) => {
+  if (event.target.closest("#openMenu")) return;
+  $("#sidebar").classList.remove("open");
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  $("#sidebar").classList.remove("open");
+  $("#notificationPanel").hidden = true;
+  closeModals();
+});
 $("#notificationButton").addEventListener("click", () => {
   $("#notificationPanel").hidden = !$("#notificationPanel").hidden;
 });
@@ -1317,7 +1332,11 @@ $("#deleteSnapshotButton").addEventListener("click", async () => {
     showToast(error.message);
   } finally { button.disabled = false; }
 });
+let lastWidth = window.innerWidth;
 window.addEventListener("resize", () => {
+  // na mobile klawiatura i pasek adresu zmieniają samą wysokość — przerysowanie kasowałoby wpisane dane
+  if (window.innerWidth === lastWidth) return;
+  lastWidth = window.innerWidth;
   clearTimeout(window.__worthlyResize);
   window.__worthlyResize = setTimeout(renderView, 150);
 });

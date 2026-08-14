@@ -1,6 +1,6 @@
 # Net Worth Tracker — dokumentacja programistyczna
 
-Dokument opisuje architekturę wersji `1.8.1` i reguły potrzebne przy dalszej
+Dokument opisuje architekturę wersji `1.8.2` i reguły potrzebne przy dalszej
 rozbudowie.
 
 ## Założenia
@@ -251,6 +251,28 @@ nowych widoków:
 Etykiety i tooltipy wykresów rysowane na Canvasie w `app.js` mają własne rozmiary
 (`12px` i `bold 13px`) — przy ich zmianie trzeba dopasować `pad.left` w
 `drawLineChart()`, bo od niego zależy szerokość marginesu na podpisy osi.
+
+### Reguły dla urządzeń mobilnych
+
+Breakpointy to `1050px` (chowany sidebar), `800px` (układ jednokolumnowy, cele
+dotykowe) i `560px` (najwęższe telefony). Interfejs jest sprawdzany przy `390px`
+i `320px` szerokości — obie muszą pozostać wolne od poziomego przewijania.
+
+- **Pola formularzy poniżej 800px mają 16px.** Safari na iOS przybliża stronę
+  przy fokusie na polu mniejszym niż 16px i nie cofa zoomu. Nowy input dodany do
+  modala albo paska filtrów musi trafić na listę selektorów w media 800px.
+- **Elementy dotykowe mają co najmniej 44px** w obu wymiarach poniżej 800px
+  (przełączniki zakresów 40px). Ikony akcji projektowane na desktop (37px, 22px)
+  są powiększane wyłącznie w media query — desktop zostaje bez zmian.
+- **`renderView()` przerysowuje widok tylko przy zmianie szerokości okna.**
+  Klawiatura ekranowa i chowający się pasek adresu zmieniają samą wysokość;
+  przerysowanie kasowałoby wpisane dane (`main.innerHTML` buduje widok od zera).
+  Stan pól filtrujących trzymaj w `state` (np. `state.accountQuery`), nie w DOM.
+- **Wąskie wiersze siatek składaj przez `grid-area`, nie przez chowanie kolumn.**
+  `.table-row` i `.history-row` przenoszą poniżej 800px/560px drugą wartość do
+  osobnego wiersza, zamiast usuwać informację o typie konta czy zmianie salda.
+- Skrajne etykiety osi X są przycinane do obszaru Canvasu w `drawLineChart()` —
+  bez tego ostatni podpis miesiąca ucina się na wąskim ekranie.
 
 ### Kontrakt synchronizacji
 
