@@ -24,3 +24,5 @@ coverage.xml
 .opencode/
 .skillbox/
 .mcp.json
+opencode.json
+opencode.jsonc
