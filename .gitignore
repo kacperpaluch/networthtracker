@@ -22,6 +22,7 @@ coverage.xml
 .claude/
 .codex/
 .opencode/
+.vibe/
 .skillbox/
 .mcp.json
 opencode.json
